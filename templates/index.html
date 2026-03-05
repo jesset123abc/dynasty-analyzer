@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dynasty Trade Analyzer</title>
+  <style>
+    :root {
+      --bg:        #0d1117;
+      --bg-card:   #161b22;
+      --bg-input:  #0d1117;
+      --border:    #30363d;
+      --border-hi: #484f58;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --green-dim: rgba(63,185,80,.15);
+      --green-bdr: rgba(63,185,80,.35);
+      --blue:      #58a6ff;
+      --blue-dim:  rgba(88,166,255,.08);
+      --blue-bdr:  rgba(88,166,255,.25);
+      --red:       #f85149;
+      --red-dim:   rgba(248,81,73,.15);
+      --red-bdr:   rgba(248,81,73,.35);
+      --gold:      #e3b341;
+      --gold-dim:  rgba(227,179,65,.15);
+      --gold-bdr:  rgba(227,179,65,.35);
+      --purple:    #bc8cff;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      font-size: 15px;
+    }
+
+    /* ── Header ─────────────────────────────────────── */
+    .header {
+      background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .header-icon { font-size: 2rem; }
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--green) 0%, var(--blue) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header p { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+
+    /* ── Main layout ─────────────────────────────────── */
+    .main { max-width: 1280px; margin: 0 auto; padding: 28px 32px; }
+
+    /* ── Panels ───────────────────────────────────────── */
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 18px;
+    }
+    .panel-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+    .panel-label span {
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    .control-row { display: flex; gap: 14px; align-items: flex-end; }
+    .form-group { flex: 1; }
+    .form-group label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
+
+    select {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 36px 9px 12px;
+      color: var(--text);
+      font-size: 0.95rem;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b949e' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      transition: border-color .15s;
+    }
+    select:focus { outline: none; border-color: var(--blue); }
+    select option { background: #1c2128; }
+
+    /* ── Buttons ──────────────────────────────────────── */
+    .btn {
+      border-radius: 8px;
+      padding: 9px 20px;
+      color: #fff;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      transition: all .2s;
+    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+    .btn-green {
+      background: linear-gradient(135deg, #238636, #2ea043);
+      border: 1px solid #2ea043;
+    }
+    .btn-green:hover { background: linear-gradient(135deg, #2ea043, #46c95a); box-shadow: 0 4px 14px rgba(46,160,67,.35); transform: translateY(-1px); }
+
+    .btn-gold {
+      background: linear-gradient(135deg, #9e6a03, #d29922);
+      border: 1px solid #d29922;
+    }
+    .btn-gold:hover { background: linear-gradient(135deg, #d29922, #e3b341); box-shadow: 0 4px 14px rgba(210,153,34,.35); transform: translateY(-1px); }
+
+    .btn-blue {
+      background: linear-gradient(135deg, #1158c7, #388bfd);
+      border: 1px solid #388bfd;
+    }
+    .btn-blue:hover { background: linear-gradient(135deg, #388bfd, #58a6ff); box-shadow: 0 4px 14px rgba(56,139,253,.35); transform: translateY(-1px); }
+
+    .btn-purple {
+      background: linear-gradient(135deg, #6e40c9, #9765f0);
+      border: 1px solid rgba(188,140,255,.5);
+    }
+    .btn-purple:hover { background: linear-gradient(135deg, #9765f0, #bc8cff); box-shadow: 0 4px 14px rgba(150,100,240,.35); transform: translateY(-1px); }
+
+    /* ── Trade style toggle ──────────────────────────── */
+    .style-toggle {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .style-toggle-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      align-self: center;
+      margin-right: 4px;
+      white-space: nowrap;
+    }
+    .style-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 5px 14px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+    .style-btn:hover { border-color: var(--border-hi); color: var(--text); }
+    .style-btn.active-fair     { background: var(--blue-dim);  border-color: var(--blue-bdr);  color: var(--blue); }
+    .style-btn.active-aggressive { background: var(--green-dim); border-color: var(--green-bdr); color: var(--green); }
+    .style-btn.active-overpay  { background: var(--gold-dim);  border-color: var(--gold-bdr);  color: var(--gold); }
+
+    /* ── Offer evaluator section ─────────────────────── */
+    .offer-section {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+    }
+    .offer-section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 10px;
+    }
+    .offer-row { display: flex; gap: 12px; align-items: flex-end; }
+    .offer-row .form-group { flex: 1; }
+    .offer-row label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
+
+    textarea {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: 0.9rem;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 70px;
+      transition: border-color .15s;
+    }
+    textarea::placeholder { color: var(--muted); }
+    textarea:focus { outline: none; border-color: var(--blue); }
+
+    /* ── Loading ─────────────────────────────────────── */
+    .loading { display: none; text-align: center; padding: 72px 0; }
+    .loading.active { display: block; }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 3px solid var(--border);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-title { font-size: 1rem; color: var(--text); margin-bottom: 6px; }
+    .loading-sub { font-size: 0.85rem; color: var(--muted); }
+
+    /* ── Inline error box ────────────────────────────── */
+    .error-box {
+      display: none;
+      background: var(--red-dim);
+      border: 1px solid var(--red-bdr);
+      border-radius: 10px;
+      padding: 18px 20px;
+      color: var(--red);
+      font-size: 0.9rem;
+    }
+    .error-box.active { display: block; }
+
+    /* ── Results ─────────────────────────────────────── */
+    #results { display: none; }
+    #results.active { display: block; }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .results-header-text h2 { font-size: 1.15rem; font-weight: 600; }
+    .results-header-text p { color: var(--muted); font-size: 0.82rem; margin-top: 4px; }
+
+    .mode-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      padding: 4px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .mode-general  { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-bdr); }
+    .mode-draftday { background: var(--gold-dim);  color: var(--gold);  border: 1px solid var(--gold-bdr); }
+    .mode-eval     { background: var(--blue-dim);  color: var(--blue);  border: 1px solid var(--blue-bdr); }
+
+    /* ── Trade cards grid ────────────────────────────── */
+    .trades-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(540px, 1fr));
+      gap: 18px;
+    }
+
+    .trade-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color .2s, transform .2s, box-shadow .2s;
+    }
+    .trade-card:hover {
+      border-color: var(--border-hi);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    }
+
+    /* Scenario type strip (draft day only) */
+    .scenario-strip {
+      padding: 5px 14px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .scenario-buy-101  { background: rgba(227,179,65,.12);  color: #e3b341; border-bottom: 1px solid rgba(227,179,65,.25); }
+    .scenario-buy-102  { background: rgba(188,140,255,.12); color: #bc8cff; border-bottom: 1px solid rgba(188,140,255,.25); }
+    .scenario-sell-110 { background: rgba(63,185,80,.10);   color: #3fb950; border-bottom: 1px solid rgba(63,185,80,.22); }
+    .scenario-proactive{ background: rgba(88,166,255,.10);  color: #58a6ff; border-bottom: 1px solid rgba(88,166,255,.22); }
+
+    /* Card header */
+    .card-head {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(135deg, #1c2128, #161b22);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .card-head-left { min-width: 0; }
+    .partner-name {
+      font-weight: 600;
+      font-size: 1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .partner-owner { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+
+    /* Grade badge */
+    .grade {
+      width: 42px; height: 42px; flex-shrink: 0;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 0.95rem;
+    }
+    .grade-A  { background: rgba(63,185,80,.18);  color: #3fb950; border: 2px solid #3fb950; }
+    .grade-Bp { background: rgba(88,166,255,.18); color: #58a6ff; border: 2px solid #58a6ff; }
+    .grade-B  { background: rgba(88,166,255,.12); color: #7dbfff; border: 2px solid #7dbfff; }
+    .grade-Cp { background: rgba(227,179,65,.18); color: #e3b341; border: 2px solid #e3b341; }
+    .grade-C  { background: rgba(227,179,65,.10); color: #c9a227; border: 2px solid #c9a227; }
+    .grade-D  { background: rgba(248,81,73,.18);  color: #f85149; border: 2px solid #f85149; }
+
+    /* Card body */
+    .card-body { padding: 18px; }
+
+    .trade-sides {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .side-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-weight: 700;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .give-side .side-label { color: var(--red); }
+    .give-side .side-label::before { content: '↑'; }
+    .recv-side .side-label { color: var(--green); }
+    .recv-side .side-label::before { content: '↓'; }
+
+    .asset-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+
+    .tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      line-height: 1.3;
+    }
+    .tag-give      { background: var(--red-dim);               border: 1px solid var(--red-bdr);              color: #ffa198; }
+    .tag-give-pick { background: rgba(248,81,73,.08);           border: 1px solid rgba(248,81,73,.2);          color: #ff9f9a; border-style: dashed; }
+    .tag-recv      { background: var(--green-dim);              border: 1px solid var(--green-bdr);            color: #7ee787; }
+    .tag-recv-pick { background: rgba(63,185,80,.08);           border: 1px solid rgba(63,185,80,.2);          color: #56d364; border-style: dashed; }
+
+    .rationale {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.65;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      margin-bottom: 10px;
+    }
+
+    .dynasty-impact {
+      background: var(--blue-dim);
+      border: 1px solid var(--blue-bdr);
+      border-radius: 6px;
+      padding: 9px 12px;
+      font-size: 0.8rem;
+      color: #8ab4f8;
+      line-height: 1.55;
+    }
+    .dynasty-impact strong { color: var(--blue); font-weight: 600; }
+
+    /* ── Offer Evaluation Card ───────────────────────── */
+    .eval-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      max-width: 740px;
+    }
+
+    .eval-head {
+      padding: 20px 22px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(135deg, #1c2128, #161b22);
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .eval-head-main { flex: 1; min-width: 0; }
+    .eval-offer-summary {
+      font-size: 1rem;
+      font-weight: 600;
+      line-height: 1.4;
+      margin-bottom: 6px;
+    }
+
+    .verdict-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      padding: 5px 14px;
+      border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .verdict-ACCEPT  { background: rgba(63,185,80,.2);  color: #3fb950; border: 1.5px solid #3fb950; }
+    .verdict-COUNTER { background: rgba(227,179,65,.2); color: #e3b341; border: 1.5px solid #e3b341; }
+    .verdict-DECLINE { background: rgba(248,81,73,.2);  color: #f85149; border: 1.5px solid #f85149; }
+
+    .eval-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 16px; }
+
+    .ktc-math {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .ktc-side {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .ktc-side-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .ktc-side-give .ktc-side-label { color: var(--red); }
+    .ktc-side-recv .ktc-side-label { color: var(--green); }
+    .ktc-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -.02em;
+    }
+    .ktc-side-give .ktc-value { color: var(--red); }
+    .ktc-side-recv .ktc-value { color: var(--green); }
+    .ktc-diff {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .ktc-breakdown-box {
+      background: rgba(255,255,255,.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .ktc-breakdown-box strong { color: var(--text); }
+
+    .verdict-reason-box {
+      font-size: 0.88rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .counter-box {
+      background: var(--gold-dim);
+      border: 1px solid var(--gold-bdr);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.85rem;
+      color: #f0c060;
+      line-height: 1.6;
+    }
+    .counter-box strong { color: var(--gold); font-weight: 600; }
+
+    /* ── Error banner (top-of-page) ──────────────────── */
+    {% if error %}
+    .top-error {
+      background: var(--red-dim);
+      border: 1px solid var(--red-bdr);
+      border-radius: 10px;
+      padding: 14px 18px;
+      color: var(--red);
+      font-size: 0.875rem;
+      margin-bottom: 20px;
+    }
+    {% endif %}
+
+    /* ── Responsive ──────────────────────────────────── */
+    @media (max-width: 700px) {
+      .main { padding: 16px; }
+      .control-row { flex-direction: column; }
+      .offer-row { flex-direction: column; }
+      .btn { width: 100%; justify-content: center; }
+      .trades-grid { grid-template-columns: 1fr; }
+      .trade-sides { grid-template-columns: 1fr; }
+      .ktc-math { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-icon">🏈</div>
+  <div style="flex:1">
+    <h1>Dynasty Trade Analyzer</h1>
+    <p>ESPN League · Season 2025 · AI-powered by Claude</p>
+  </div>
+  <div style="display:flex;gap:8px">
+    <a href="/advisor" style="
+      background: linear-gradient(135deg, #6e40c9, #9765f0);
+      border: 1px solid rgba(188,140,255,.4);
+      border-radius: 8px;
+      padding: 8px 16px;
+      color: #fff;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+      transition: all .2s;
+    " onmouseover="this.style.boxShadow='0 4px 14px rgba(150,100,240,.4)'"
+       onmouseout="this.style.boxShadow='none'">
+      🤖 Advisor
+    </a>
+    <a href="/draft-board" style="
+      background: linear-gradient(135deg, #9e6a03, #d29922);
+      border: 1px solid #d29922;
+      border-radius: 8px;
+      padding: 8px 16px;
+      color: #fff;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+      transition: all .2s;
+    " onmouseover="this.style.boxShadow='0 4px 14px rgba(210,153,34,.4)'"
+       onmouseout="this.style.boxShadow='none'">
+      🏆 Draft Board
+    </a>
+    <a href="/rankings" style="
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 16px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+      transition: all .2s;
+    " onmouseover="this.style.color='var(--text)';this.style.borderColor='var(--border-hi)'"
+       onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border)'">
+      📊 Rankings
+    </a>
+  </div>
+</header>
+
+<main class="main">
+
+  {% if error %}
+  <div class="top-error">⚠️ ESPN fetch error: {{ error }}</div>
+  {% endif %}
+
+  <!-- Panel 1: General analysis -->
+  <div class="panel">
+    <div class="panel-label">General Analysis</div>
+
+    <!-- Trade style toggle -->
+    <div class="style-toggle">
+      <span class="style-toggle-label">Trade Style:</span>
+      <button class="style-btn active-fair" data-style="fair"       onclick="setStyle(this)" title="±3% — truly even trades both sides accept">⚖️ Fair &amp; Balanced</button>
+      <button class="style-btn"             data-style="aggressive" onclick="setStyle(this)" title="Jesse overpays 5–15% to aggressively acquire talent">⚡ Aggressive Buy</button>
+      <button class="style-btn"             data-style="overpay"    onclick="setStyle(this)" title="Other team overpays 5–15% — Jesse sets a premium asking price">💰 Overpay Required</button>
+    </div>
+
+    <div class="control-row">
+      <div class="form-group" style="min-width:160px;max-width:200px">
+        <label for="pos-filter">Target Position <span style="color:var(--muted);font-size:.75rem">(trade analyzer only)</span></label>
+        <select id="pos-filter">
+          <option value="">Any position</option>
+          <option value="QB">QB — quarterback</option>
+          <option value="RB">RB — running back</option>
+          <option value="WR">WR — wide receiver</option>
+          <option value="TE">TE — tight end</option>
+        </select>
+      </div>
+      <button class="btn btn-green" id="analyze-btn" onclick="analyzeTrades()">
+        <span>⚡</span> Analyze Trades
+      </button>
+    </div>
+  </div>
+
+  <!-- Panel 2: Draft day -->
+  <div class="panel">
+    <div class="panel-label"><span>🏆</span> Draft Day Mode</div>
+    <div class="control-row" style="gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:180px">
+        <p style="font-size:.85rem; color:var(--muted); line-height:1.55;">
+          Generate 5 focused scenarios for selling a specific pick. Trade style above applies.
+        </p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-gold"   id="draft-btn-101" onclick="draftDayAnalysis('1.01')" style="font-size:.82rem;padding:8px 14px">
+          <span>🥇</span> Sell 1.01
+        </button>
+        <button class="btn btn-purple" id="draft-btn-103" onclick="draftDayAnalysis('1.03')" style="font-size:.82rem;padding:8px 14px">
+          <span>🎯</span> Sell 1.03
+        </button>
+        <button class="btn btn-green"  id="draft-btn-110" onclick="draftDayAnalysis('1.10')" style="font-size:.82rem;padding:8px 14px">
+          <span>📦</span> Sell 1.10
+        </button>
+      </div>
+    </div>
+
+    <div class="offer-section">
+      <div class="offer-section-label">Evaluate an Incoming Offer</div>
+      <div class="offer-row">
+        <div class="form-group">
+          <label for="offer-input">Describe the offer you received</label>
+          <textarea id="offer-input" placeholder="e.g. Brad offered me Travis Hunter + his 2027 1st for my 1.01 (Jeremiyah Love)"></textarea>
+        </div>
+        <button class="btn btn-blue" id="eval-btn" onclick="evaluateOffer()" style="align-self:flex-end">
+          <span>⚖️</span> Evaluate Offer
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-title" id="loading-title">Claude is analyzing all 10 rosters…</div>
+    <div class="loading-sub" id="loading-sub">Generating trade proposals with dynasty context — usually 15–30 seconds</div>
+  </div>
+
+  <div class="error-box" id="error-box"></div>
+
+  <div id="results">
+    <div class="results-header">
+      <div id="results-mode-badge"></div>
+      <div class="results-header-text">
+        <h2 id="results-title"></h2>
+        <p id="results-sub"></p>
+      </div>
+    </div>
+    <div class="trades-grid" id="trades-grid"></div>
+  </div>
+
+</main>
+
+<script>
+  // ── Trade style ───────────────────────────────────────
+  let activeStyle = 'fair';
+
+  // Sync draft buttons on load (reflects picks already made on the draft board)
+  document.addEventListener('DOMContentLoaded', syncDraftDayButtons);
+
+  function setStyle(btn) {
+    document.querySelectorAll('.style-btn').forEach(b => {
+      b.classList.remove('active-fair', 'active-aggressive', 'active-overpay');
+    });
+    activeStyle = btn.dataset.style;
+    btn.classList.add(`active-${activeStyle}`);
+  }
+
+  function gradeClass(g) {
+    if (!g) return 'grade-B';
+    const s = g.trim().toUpperCase().replace(/\s/g, '');
+    if (s === 'A')  return 'grade-A';
+    if (s === 'B+') return 'grade-Bp';
+    if (s === 'B')  return 'grade-B';
+    if (s === 'C+') return 'grade-Cp';
+    if (s === 'C')  return 'grade-C';
+    if (s === 'D')  return 'grade-D';
+    if (s.startsWith('A')) return 'grade-A';
+    if (s.startsWith('B')) return 'grade-Bp';
+    if (s.startsWith('C')) return 'grade-Cp';
+    return 'grade-B';
+  }
+
+  function isPick(a) {
+    const l = a.toLowerCase();
+    return l.includes('pick') || l.includes('round') || /\b20\d{2}\b/.test(a) || /1\.\d+/.test(a);
+  }
+
+  function tagsHtml(assets, side) {
+    return assets.map(a => {
+      const cls = side === 'give'
+        ? (isPick(a) ? 'tag tag-give-pick' : 'tag tag-give')
+        : (isPick(a) ? 'tag tag-recv-pick' : 'tag tag-recv');
+      return `<span class="${cls}">${a}</span>`;
+    }).join('');
+  }
+
+  function scenarioStripHtml(scenarioType) {
+    if (!scenarioType) return '';
+    let cls = 'scenario-proactive';
+    let icon = '💡';
+    if (scenarioType.includes('1.01'))        { cls = 'scenario-buy-101';  icon = '🏆'; }
+    else if (scenarioType.includes('1.02'))   { cls = 'scenario-buy-102';  icon = '⭐'; }
+    else if (scenarioType.includes('1.10') || scenarioType.includes('Sells')) { cls = 'scenario-sell-110'; icon = '📦'; }
+    return `<div class="scenario-strip ${cls}">${icon} ${scenarioType}</div>`;
+  }
+
+  function setLoading(title, sub, spinnerColor) {
+    document.getElementById('loading-title').textContent = title;
+    document.getElementById('loading-sub').textContent = sub;
+    const spinner = document.querySelector('.spinner');
+    spinner.style.borderTopColor = spinnerColor || 'var(--green)';
+  }
+
+  function startLoading() {
+    document.getElementById('loading').classList.add('active');
+    document.getElementById('results').classList.remove('active');
+    document.getElementById('error-box').classList.remove('active');
+  }
+
+  function stopLoading() {
+    document.getElementById('loading').classList.remove('active');
+  }
+
+  function showError(msg) {
+    const box = document.getElementById('error-box');
+    box.textContent = '⚠️ ' + msg;
+    box.classList.add('active');
+  }
+
+  // ── Cross-page trade persistence ──────────────────────
+  const TRADES_KEY = 'dynasty_last_trades';
+  function saveTrades(trades, mode, tradeStyle) {
+    try {
+      localStorage.setItem(TRADES_KEY, JSON.stringify({ trades, mode, tradeStyle, savedAt: Date.now() }));
+    } catch(e) {}
+  }
+
+  function disableAll() {
+    ['analyze-btn', 'draft-btn-101', 'draft-btn-103', 'draft-btn-110', 'eval-btn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = true;
+    });
+  }
+
+  function enableAll() {
+    ['analyze-btn', 'draft-btn-101', 'draft-btn-103', 'draft-btn-110', 'eval-btn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = false;
+    });
+    syncDraftDayButtons(); // restore traded/drafted state after re-enabling
+  }
+
+  // ── Draft board state helpers ─────────────────────────
+  function getDraftState() {
+    try { return JSON.parse(localStorage.getItem('dynasty_draft_2026') || 'null'); } catch(e) { return null; }
+  }
+
+  // Update draft day buttons to reflect picks already made or traded away
+  function syncDraftDayButtons() {
+    const draft = getDraftState();
+    const picksHeld = draft?.picksHeld || { "1.01": true, "1.03": true, "1.10": true };
+
+    const pickMap = {
+       1: { id: 'draft-btn-101', slot: '1.01', icon: '🥇', label: 'Sell 1.01' },
+       3: { id: 'draft-btn-103', slot: '1.03', icon: '🎯', label: 'Sell 1.03' },
+      10: { id: 'draft-btn-110', slot: '1.10', icon: '📦', label: 'Sell 1.10' },
+    };
+
+    for (const [pickNum, cfg] of Object.entries(pickMap)) {
+      const btn = document.getElementById(cfg.id);
+      if (!btn) continue;
+      const made   = draft?.draftLog?.find(e => e.pick == pickNum && e.isJesse);
+      const traded = picksHeld[cfg.slot] === false;
+
+      if (traded) {
+        const tradeEntry = draft?.tradeLog?.find(e => e.gave === cfg.slot);
+        btn.innerHTML = `<span>↗</span> ${cfg.slot} Traded`;
+        btn.disabled = true;
+        btn.style.opacity = '0.45';
+        btn.title = tradeEntry
+          ? `Traded to ${tradeEntry.to}: received ${tradeEntry.received}`
+          : 'Traded away';
+      } else if (made) {
+        btn.innerHTML = `<span>✓</span> ${made.playerName}`;
+        btn.disabled = false;
+        btn.style.opacity = '0.65';
+        btn.title = `Already drafted at ${cfg.slot}`;
+      } else {
+        btn.innerHTML = `<span>${cfg.icon}</span> ${cfg.label}`;
+        btn.disabled = false;
+        btn.style.opacity = '';
+        btn.title = '';
+      }
+    }
+  }
+
+  async function analyzeTrades() {
+    const posSel = document.getElementById('pos-filter');
+    const targetPos = posSel ? posSel.value : '';
+    const posLabel  = targetPos ? ` targeting ${targetPos}` : '';
+    setLoading(`Claude is analyzing all 10 rosters${posLabel}…`, 'Generating trade proposals with dynasty context — usually 15–30 seconds', 'var(--green)');
+    startLoading();
+    disableAll();
+
+    try {
+      const res = await fetch('/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team_id: 8, trade_style: activeStyle, target_pos: targetPos }),
+        signal: AbortSignal.timeout(120000),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Analysis failed');
+      saveTrades(data.trades, 'general', data.trade_style);
+      renderTrades(data.trades, data.my_team, 'general', data.trade_style);
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      stopLoading();
+      enableAll();
+    }
+  }
+
+  async function draftDayAnalysis(pickSlot) {
+    const pickLabels = { '1.01': '1.01 (Love)', '1.03': '1.03 (Alex\'s)', '1.10': '1.10 (Patrick\'s)' };
+    setLoading(
+      `Generating sell scenarios for ${pickLabels[pickSlot]}…`,
+      'Finding 5 packages from different teams — usually 15–30 seconds',
+      pickSlot === '1.01' ? 'var(--gold)' : pickSlot === '1.03' ? 'var(--purple)' : 'var(--green)'
+    );
+    startLoading();
+    disableAll();
+
+    try {
+      const res = await fetch('/draft-day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team_id: 8, trade_style: activeStyle, pick_slot: pickSlot, draft_state: getDraftState() }),
+        signal: AbortSignal.timeout(120000),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Analysis failed');
+      saveTrades(data.trades, 'draft_day', data.trade_style);
+      renderTrades(data.trades, data.my_team, 'draft_day', data.trade_style, data.pick_slot);
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      stopLoading();
+      enableAll();
+    }
+  }
+
+  async function evaluateOffer() {
+    const offerText = document.getElementById('offer-input').value.trim();
+    if (!offerText) { alert('Please describe the offer you received.'); return; }
+
+    setLoading('Evaluating the offer…', 'Running KTC math and building your counter — usually 10–20 seconds', 'var(--blue)');
+    startLoading();
+    disableAll();
+
+    try {
+      const res = await fetch('/evaluate-offer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team_id: 8, offer_text: offerText }),
+        signal: AbortSignal.timeout(120000),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Evaluation failed');
+      renderEvaluation(data.evaluation, data.my_team);
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      stopLoading();
+      enableAll();
+    }
+  }
+
+  const STYLE_BADGE = {
+    'Fair & Balanced':   '<span class="mode-badge" style="background:var(--blue-dim);color:var(--blue);border:1px solid var(--blue-bdr)">⚖️ Fair &amp; Balanced</span>',
+    'Aggressive Buy':    '<span class="mode-badge" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-bdr)">⚡ Aggressive Buy</span>',
+    'Overpay Required':  '<span class="mode-badge" style="background:var(--gold-dim);color:var(--gold);border:1px solid var(--gold-bdr)">💰 Overpay Required</span>',
+  };
+
+  const PICK_BADGE = {
+    '1.01': '<span class="mode-badge" style="background:rgba(227,179,65,.12);color:var(--gold);border:1px solid rgba(227,179,65,.4)">🥇 Sell 1.01</span>',
+    '1.03': '<span class="mode-badge" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple-bdr)">🎯 Sell 1.03</span>',
+    '1.10': '<span class="mode-badge" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-bdr)">📦 Sell 1.10</span>',
+  };
+
+  function renderTrades(trades, myTeam, mode, tradeStyle, pickSlot) {
+    const modeBadge = document.getElementById('results-mode-badge');
+    const styleBadge = STYLE_BADGE[tradeStyle] || '';
+    if (mode === 'draft_day') {
+      const pickBadge = pickSlot ? (PICK_BADGE[pickSlot] || '') : '';
+      modeBadge.innerHTML = '<span class="mode-badge mode-draftday">Draft Day</span> ' + pickBadge + ' ' + styleBadge;
+    } else {
+      modeBadge.innerHTML = '<span class="mode-badge mode-general">General</span> ' + styleBadge;
+    }
+
+    document.getElementById('results-title').textContent = `Trade Proposals for ${myTeam}`;
+    document.getElementById('results-sub').textContent =
+      `${trades.length} scenarios generated by Claude · Picks shown with dashed borders`;
+
+    const grid = document.getElementById('trades-grid');
+    grid.innerHTML = '';
+
+    trades.forEach(t => {
+      const card = document.createElement('div');
+      card.className = 'trade-card';
+
+      const strip = mode === 'draft_day' ? scenarioStripHtml(t.scenario_type) : '';
+
+      card.innerHTML = `
+        ${strip}
+        <div class="card-head">
+          <div class="card-head-left">
+            <div class="partner-name">Trade with: ${t.trade_partner || '?'}</div>
+            <div class="partner-owner">Owner: ${t.trade_partner_owner || ''}</div>
+          </div>
+          <div class="grade ${gradeClass(t.grade)}">${t.grade || 'B'}</div>
+        </div>
+        <div class="card-body">
+          <div class="trade-sides">
+            <div class="give-side">
+              <div class="side-label">You Give</div>
+              <div class="asset-tags">${tagsHtml(t.my_team_gives || [], 'give')}</div>
+            </div>
+            <div class="recv-side">
+              <div class="side-label">You Receive</div>
+              <div class="asset-tags">${tagsHtml(t.i_receive || [], 'recv')}</div>
+            </div>
+          </div>
+          ${t.value_check
+            ? `<div style="font-size:.75rem;color:var(--muted);margin-bottom:10px;padding:6px 10px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:6px">
+                 <strong style="color:var(--border-hi)">Value check:</strong> ${t.value_check}
+               </div>`
+            : ''}
+          <div class="rationale">${t.rationale || ''}</div>
+          ${t.dynasty_impact
+            ? `<div class="dynasty-impact"><strong>Dynasty Impact:</strong> ${t.dynasty_impact}</div>`
+            : ''}
+        </div>`;
+      grid.appendChild(card);
+    });
+
+    document.getElementById('results').classList.add('active');
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderEvaluation(ev, myTeam) {
+    const modeBadge = document.getElementById('results-mode-badge');
+    modeBadge.innerHTML = '<span class="mode-badge mode-eval">Offer Evaluation</span>';
+
+    document.getElementById('results-title').textContent = `Offer Evaluation for ${myTeam}`;
+    document.getElementById('results-sub').textContent = 'KTC value analysis with counter-offer recommendation';
+
+    const verdict = (ev.verdict || 'COUNTER').toUpperCase();
+    const verdictIcon = verdict === 'ACCEPT' ? '✅' : verdict === 'COUNTER' ? '↩️' : '❌';
+
+    const gives = Number(ev.jesse_gives_ktc) || 0;
+    const gets  = Number(ev.jesse_receives_ktc) || 0;
+    const diff  = gets - gives;
+    const pct   = gives > 0 ? ((diff / gives) * 100).toFixed(1) : '—';
+    const diffStr = diff >= 0
+      ? `+${diff.toLocaleString()} KTC (+${pct}%) — you come out ahead`
+      : `${diff.toLocaleString()} KTC (${pct}%) — you give more value`;
+
+    const counterHtml = (ev.counter_offer && ev.counter_offer !== 'N/A')
+      ? `<div class="counter-box"><strong>Counter-Offer:</strong> ${ev.counter_offer}</div>`
+      : '';
+
+    const grid = document.getElementById('trades-grid');
+    grid.innerHTML = `
+      <div class="eval-card">
+        <div class="eval-head">
+          <div class="eval-head-main">
+            <div class="eval-offer-summary">${ev.offer_summary || 'Offer'}</div>
+            <span class="verdict-badge verdict-${verdict}">${verdictIcon} ${verdict}</span>
+          </div>
+          <div class="grade ${gradeClass(ev.grade)}">${ev.grade || 'B'}</div>
+        </div>
+        <div class="eval-body">
+          <div class="ktc-math">
+            <div class="ktc-side ktc-side-give">
+              <div class="ktc-side-label">You Give</div>
+              <div class="ktc-value">${gives.toLocaleString()}</div>
+              <div class="ktc-diff">KTC value</div>
+            </div>
+            <div class="ktc-side ktc-side-recv">
+              <div class="ktc-side-label">You Receive</div>
+              <div class="ktc-value">${gets.toLocaleString()}</div>
+              <div class="ktc-diff">${diffStr}</div>
+            </div>
+          </div>
+          <div class="ktc-breakdown-box"><strong>Breakdown:</strong> ${ev.ktc_breakdown || ''}</div>
+          <div class="verdict-reason-box">${ev.verdict_reason || ''}</div>
+          ${counterHtml}
+        </div>
+      </div>`;
+
+    document.getElementById('results').classList.add('active');
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+</script>
+</body>
+</html>

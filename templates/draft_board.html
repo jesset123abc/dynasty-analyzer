@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026 Dynasty Draft Board</title>
+  <style>
+    :root {
+      --bg:        #0d1117;
+      --bg-card:   #161b22;
+      --bg-input:  #0d1117;
+      --border:    #30363d;
+      --border-hi: #484f58;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --green-dim: rgba(63,185,80,.12);
+      --green-bdr: rgba(63,185,80,.3);
+      --blue:      #58a6ff;
+      --blue-dim:  rgba(88,166,255,.08);
+      --blue-bdr:  rgba(88,166,255,.25);
+      --red:       #f85149;
+      --gold:      #e3b341;
+      --gold-dim:  rgba(227,179,65,.12);
+      --gold-bdr:  rgba(227,179,65,.3);
+      --purple:    #bc8cff;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── Header ───────────────────────────────────────── */
+    .header {
+      background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .back-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.82rem;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: color .15s;
+    }
+    .back-link:hover { color: var(--text); }
+    .header h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--gold) 0%, #f0a500 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header-sub { color: var(--muted); font-size: 0.75rem; margin-top: 1px; }
+
+    .btn-reset {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 14px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-reset:hover { border-color: var(--red); color: var(--red); }
+
+    /* ── Pick Tracker ─────────────────────────────────── */
+    .tracker-wrap {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+    }
+    .tracker-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .pick-slots {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pick-slot {
+      flex: 1;
+      min-width: 80px;
+      max-width: 120px;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      text-align: center;
+      transition: border-color .2s, background .2s;
+    }
+    .pick-slot.jesse-pick {
+      border-color: var(--gold-bdr);
+      background: var(--gold-dim);
+    }
+    .pick-slot.current-pick {
+      border-color: var(--green);
+      box-shadow: 0 0 0 2px rgba(63,185,80,.2);
+      animation: pulse-border 1.5s infinite;
+    }
+    @keyframes pulse-border {
+      0%, 100% { box-shadow: 0 0 0 2px rgba(63,185,80,.2); }
+      50%       { box-shadow: 0 0 0 4px rgba(63,185,80,.35); }
+    }
+    .pick-slot.current-pick.jesse-pick { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(227,179,65,.3); }
+    .slot-num {
+      font-size: 0.65rem;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .jesse-pick .slot-num { color: var(--gold); }
+    .slot-player {
+      font-size: 0.78rem;
+      font-weight: 600;
+      margin-top: 4px;
+      min-height: 18px;
+      line-height: 1.3;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .jesse-pick .slot-player.filled { color: var(--gold); }
+    .slot-owner {
+      font-size: 0.65rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* ── Main layout ──────────────────────────────────── */
+    .main { display: flex; gap: 0; height: calc(100vh - 200px); min-height: 500px; }
+
+    /* ── Player pool ──────────────────────────────────── */
+    .player-pool {
+      flex: 1;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+    }
+
+    .filter-bar {
+      position: sticky;
+      top: 0;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      z-index: 10;
+    }
+    .filter-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 12px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .filter-btn:hover { border-color: var(--border-hi); color: var(--text); }
+    .filter-btn.active { background: rgba(88,166,255,.12); border-color: var(--blue); color: var(--blue); }
+    .filter-count { margin-left: auto; font-size: 0.75rem; color: var(--muted); }
+
+    .player-table { width: 100%; border-collapse: collapse; }
+    .player-table thead th {
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-card);
+      position: sticky;
+      top: 42px;
+      z-index: 9;
+      white-space: nowrap;
+    }
+    .player-table thead th.th-center { text-align: center; }
+
+    .player-row {
+      border-bottom: 1px solid rgba(48,54,61,.6);
+      transition: background .12s;
+    }
+    .player-row:hover { background: rgba(255,255,255,.03); }
+    .player-row.drafted { opacity: .38; }
+    .player-row.jesse-drafted { background: rgba(63,185,80,.07); opacity: 1; }
+    .player-row.jesse-drafted:hover { background: rgba(63,185,80,.11); }
+
+    .player-row td { padding: 9px 12px; vertical-align: middle; }
+
+    .rank-cell { color: var(--muted); font-size: 0.78rem; font-weight: 600; width: 36px; }
+
+    .name-cell { min-width: 140px; }
+    .player-name {
+      font-weight: 600;
+      font-size: 0.88rem;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .player-row.drafted .player-name { text-decoration: line-through; }
+    .pos-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: .04em;
+    }
+    .pos-QB { background: rgba(188,140,255,.2); color: var(--purple); }
+    .pos-RB { background: rgba(63,185,80,.2);  color: #3fb950; }
+    .pos-WR { background: rgba(88,166,255,.2); color: var(--blue); }
+    .pos-TE { background: rgba(227,179,65,.2); color: var(--gold); }
+
+    .college-cell { color: var(--muted); font-size: 0.8rem; }
+    .ktc-cell { font-weight: 700; font-size: 0.88rem; color: var(--text); }
+    .age-cell { color: var(--muted); font-size: 0.8rem; text-align: center; }
+    .notes-cell { color: var(--muted); font-size: 0.78rem; max-width: 220px; }
+
+    .drafted-by {
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-style: italic;
+    }
+    .drafted-by.jesse { color: var(--green); font-style: normal; font-weight: 600; }
+
+    /* Draft action */
+    .action-cell { width: 110px; }
+    .draft-wrapper { position: relative; display: inline-block; }
+    .btn-draft {
+      background: rgba(88,166,255,.1);
+      border: 1px solid rgba(88,166,255,.3);
+      border-radius: 6px;
+      padding: 4px 12px;
+      color: var(--blue);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+    .btn-draft:hover { background: rgba(88,166,255,.2); border-color: var(--blue); }
+
+    /* Team picker dropdown */
+    .team-picker {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 4px);
+      background: #1c2128;
+      border: 1px solid var(--border-hi);
+      border-radius: 8px;
+      padding: 6px;
+      z-index: 100;
+      min-width: 140px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    }
+    .team-picker.open { display: block; }
+    .team-picker-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      padding: 2px 6px 6px;
+    }
+    .team-opt {
+      display: block;
+      width: 100%;
+      background: transparent;
+      border: none;
+      border-radius: 5px;
+      padding: 6px 8px;
+      text-align: left;
+      color: var(--text);
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: background .1s;
+    }
+    .team-opt:hover { background: rgba(255,255,255,.07); }
+    .team-opt.jesse-opt { color: var(--green); font-weight: 600; }
+
+    /* ── Right panel ──────────────────────────────────── */
+    .right-panel {
+      width: 300px;
+      flex-shrink: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .panel-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    /* Current pick control */
+    .pick-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pick-nav {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      width: 28px; height: 28px;
+      color: var(--muted);
+      font-size: 1rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all .15s;
+    }
+    .pick-nav:hover { border-color: var(--border-hi); color: var(--text); }
+    .pick-nav:disabled { opacity: .3; cursor: not-allowed; }
+    .pick-display {
+      flex: 1;
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .pick-display.jesse-turn { color: var(--gold); }
+
+    /* YOUR PICK banner */
+    .your-pick-banner {
+      display: none;
+      background: var(--gold-dim);
+      border: 1px solid var(--gold-bdr);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-top: 10px;
+      text-align: center;
+    }
+    .your-pick-banner.active { display: block; }
+    .your-pick-banner .banner-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--gold);
+      letter-spacing: .03em;
+    }
+    .your-pick-banner .banner-sub {
+      font-size: 0.75rem;
+      color: rgba(227,179,65,.7);
+      margin-top: 3px;
+    }
+
+    /* Ask Claude button */
+    .btn-claude {
+      width: 100%;
+      margin-top: 10px;
+      background: linear-gradient(135deg, #9e6a03, #d29922);
+      border: 1px solid #d29922;
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: #fff;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      transition: all .2s;
+    }
+    .btn-claude:hover { background: linear-gradient(135deg, #d29922, #e3b341); box-shadow: 0 4px 12px rgba(210,153,34,.35); }
+    .btn-claude:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* Claude recommendation */
+    .claude-rec {
+      display: none;
+      margin-top: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .claude-rec.active { display: block; }
+    .rec-pick {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--gold);
+      margin-bottom: 6px;
+    }
+    .rec-reasoning {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 8px;
+    }
+    .rec-alts {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .rec-alts-label { font-weight: 600; color: rgba(139,148,158,.7); margin-bottom: 3px; font-size: 0.68rem; text-transform: uppercase; letter-spacing: .06em; }
+    .rec-alt-item { padding: 2px 0; }
+
+    /* My picks slots */
+    .my-pick-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 7px;
+      margin-bottom: 6px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+    }
+    .my-pick-item.filled { border-color: var(--green-bdr); background: var(--green-dim); }
+    .pick-item-slot {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--gold);
+      min-width: 38px;
+    }
+    .pick-item-name {
+      font-size: 0.82rem;
+      font-weight: 600;
+      flex: 1;
+    }
+    .pick-item-name.open { color: var(--muted); font-weight: 400; font-style: italic; }
+    .pick-item-ktc { font-size: 0.72rem; color: var(--muted); }
+
+    /* Top available */
+    .top-avail-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(48,54,61,.5);
+    }
+    .top-avail-item:last-child { border-bottom: none; }
+    .ta-rank { font-size: 0.7rem; color: var(--muted); min-width: 20px; }
+    .ta-name { flex: 1; font-size: 0.82rem; font-weight: 600; }
+    .ta-ktc { font-size: 0.75rem; color: var(--muted); }
+
+    /* Draft log */
+    .log-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 0;
+      font-size: 0.78rem;
+      border-bottom: 1px solid rgba(48,54,61,.4);
+    }
+    .log-item:last-child { border-bottom: none; }
+    .log-pick { color: var(--muted); min-width: 38px; font-weight: 600; }
+    .log-player { flex: 1; }
+    .log-team { font-size: 0.72rem; color: var(--muted); }
+    .log-item.jesse-log { }
+    .jesse-log .log-player { color: var(--green); font-weight: 600; }
+    .jesse-log .log-team { color: var(--green); }
+    .log-undo-btn {
+      background: transparent;
+      border: none;
+      color: var(--border-hi);
+      font-size: 0.7rem;
+      cursor: pointer;
+      padding: 2px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      opacity: 0;
+      transition: opacity .15s, color .15s;
+    }
+    .log-item:hover .log-undo-btn { opacity: 1; }
+    .log-undo-btn:hover { color: var(--red); }
+
+    /* Draft complete banner */
+    .complete-banner {
+      display: none;
+      background: var(--green-dim);
+      border: 1px solid var(--green-bdr);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+      margin: 12px 0;
+    }
+    .complete-banner.active { display: block; }
+    .complete-banner p { font-weight: 600; color: var(--green); font-size: 0.9rem; }
+    .complete-banner small { color: var(--muted); font-size: 0.75rem; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border-hi); }
+
+    @media (max-width: 800px) {
+      .main { flex-direction: column; height: auto; }
+      .right-panel { width: 100%; border-right: none; border-top: 1px solid var(--border); }
+      .notes-cell { display: none; }
+    }
+
+    /* ── Traded pick slot ──────────────────────────────── */
+    .pick-slot.traded-pick {
+      border-color: var(--border);
+      background: rgba(139,148,158,.06);
+      opacity: 0.72;
+    }
+    .traded-label { color: var(--muted); font-style: italic; }
+
+    /* ── In-Draft Trades panel ─────────────────────────── */
+    .trade-log-wrap {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+    }
+    .trade-log-header {
+      padding: 9px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+      transition: background .15s;
+    }
+    .trade-log-header:hover { background: rgba(255,255,255,.02); }
+    .trade-log-panel-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: #d29922;
+      font-weight: 600;
+    }
+    .trade-log-count-badge {
+      font-size: 0.68rem;
+      color: var(--muted);
+      background: rgba(210,153,34,.12);
+      border: 1px solid rgba(210,153,34,.28);
+      border-radius: 10px;
+      padding: 1px 8px;
+    }
+    .trade-log-chevron { color: var(--muted); font-size: .78rem; margin-left: auto; }
+    .trade-log-body {
+      padding: 0 24px 16px;
+      border-top: 1px solid rgba(210,153,34,.2);
+      background: rgba(210,153,34,.03);
+    }
+    .trade-tabs { display: flex; gap: 6px; padding: 10px 0 8px; }
+    .trade-tab {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 14px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .trade-tab:hover { border-color: #d29922; color: #d29922; }
+    .trade-tab.active { background: rgba(210,153,34,.15); border-color: rgba(210,153,34,.5); color: #d29922; }
+    .trade-form { padding: 4px 0 8px; }
+    .trade-form-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 7px;
+    }
+    .trade-form-row label {
+      font-size: 0.74rem;
+      color: var(--muted);
+      min-width: 110px;
+    }
+    .trade-form-row input,
+    .trade-form-row select {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: var(--text);
+      font-size: 0.82rem;
+      font-family: inherit;
+    }
+    .trade-form-row input:focus,
+    .trade-form-row select:focus { outline: none; border-color: #d29922; }
+    .trade-form-row select option { background: #1c2128; }
+    .trade-log-btn {
+      background: rgba(210,153,34,.15);
+      border: 1px solid rgba(210,153,34,.4);
+      border-radius: 6px;
+      padding: 6px 16px;
+      color: #d29922;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+      margin-top: 4px;
+    }
+    .trade-log-btn:hover { background: rgba(210,153,34,.25); border-color: #d29922; }
+    .trade-history { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 8px; }
+    .trade-history-label {
+      font-size: 0.64rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .trade-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 7px 10px;
+      border-left: 3px solid rgba(210,153,34,.5);
+      background: rgba(210,153,34,.05);
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 6px;
+      font-size: 0.8rem;
+    }
+    .trade-entry-player {
+      border-left-color: rgba(88,166,255,.5);
+      background: rgba(88,166,255,.05);
+    }
+    .trade-entry-icon { color: #d29922; flex-shrink: 0; padding-top: 1px; }
+    .trade-entry-player .trade-entry-icon { color: var(--blue); }
+    .trade-entry-text { flex: 1; line-height: 1.4; }
+    .trade-entry-detail { display: block; font-size: 0.71rem; color: var(--muted); margin-top: 1px; }
+    .trade-undo-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      color: var(--muted);
+      font-size: 0.71rem;
+      cursor: pointer;
+      transition: all .15s;
+      flex-shrink: 0;
+    }
+    .trade-undo-btn:hover { border-color: var(--red); color: var(--red); }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <a href="/" class="back-link">← Trade Analyzer</a>
+    <div>
+      <h1>2026 Dynasty Draft Board</h1>
+      <div class="header-sub">Pre-draft KTC estimates · Superflex · Round 1 tracker</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <a href="/advisor" style="
+      background: linear-gradient(135deg, #6e40c9, #9765f0);
+      border: 1px solid rgba(188,140,255,.4);
+      border-radius: 6px;
+      padding: 6px 14px;
+      color: #fff;
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all .2s;
+    " onmouseover="this.style.boxShadow='0 4px 12px rgba(150,100,240,.4)'"
+       onmouseout="this.style.boxShadow='none'">
+      🤖 Advisor
+    </a>
+    <a href="/rankings" style="
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 6px 14px;
+      color: #8b949e;
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all .2s;
+    " onmouseover="this.style.color='#e6edf3';this.style.borderColor='#484f58'"
+       onmouseout="this.style.color='#8b949e';this.style.borderColor='#30363d'">
+      📊 Rankings
+    </a>
+    <button class="btn-reset" onclick="confirmReset()">Reset Draft</button>
+  </div>
+</header>
+
+<!-- Round 1 Pick Tracker -->
+<div class="tracker-wrap">
+  <div class="tracker-label">Round 1 — Pick Tracker</div>
+  <div class="pick-slots" id="pick-slots"></div>
+</div>
+
+<!-- In-Draft Trades Panel -->
+<div class="trade-log-wrap">
+  <div class="trade-log-header" onclick="toggleTradesPanel()">
+    <span class="trade-log-panel-label">📋 In-Draft Trades</span>
+    <span class="trade-log-count-badge" id="trade-log-count">0 logged</span>
+    <span class="trade-log-chevron" id="trade-log-chevron">▶</span>
+  </div>
+  <div class="trade-log-body" id="trade-log-body" style="display:none">
+
+    <!-- Tab switcher -->
+    <div class="trade-tabs">
+      <button class="trade-tab active" id="tab-pick"   onclick="switchTradeTab('pick', this)">Pick Trade</button>
+      <button class="trade-tab"        id="tab-player" onclick="switchTradeTab('player', this)">Player Move</button>
+    </div>
+
+    <!-- Pick Trade form -->
+    <div id="trade-form-pick" class="trade-form">
+      <div class="trade-form-row">
+        <label>Jesse gives (pick):</label>
+        <select id="trade-give-pick"></select>
+      </div>
+      <div class="trade-form-row">
+        <label>Also gives (players):</label>
+        <input type="text" id="trade-give-players" placeholder="e.g. Najee Harris (optional)">
+      </div>
+      <div class="trade-form-row">
+        <label>To team:</label>
+        <input type="text" id="trade-to-team" placeholder="e.g. Brad">
+      </div>
+      <div class="trade-form-row">
+        <label>Jesse receives:</label>
+        <input type="text" id="trade-receives" placeholder="e.g. Malik Nabers + 2027 1st">
+      </div>
+      <button class="trade-log-btn" onclick="logPickTrade()">Log Pick Trade</button>
+    </div>
+
+    <!-- Player Move form -->
+    <div id="trade-form-player" class="trade-form" style="display:none">
+      <div class="trade-form-row">
+        <label>Player:</label>
+        <input type="text" id="move-player" placeholder="e.g. Brock Purdy">
+      </div>
+      <div class="trade-form-row">
+        <label>From team:</label>
+        <input type="text" id="move-from" placeholder="e.g. Jesse">
+      </div>
+      <div class="trade-form-row">
+        <label>To team:</label>
+        <input type="text" id="move-to" placeholder="e.g. Brad">
+      </div>
+      <div class="trade-form-row">
+        <label>Note (optional):</label>
+        <input type="text" id="move-note" placeholder="e.g. for 2027 2nd">
+      </div>
+      <button class="trade-log-btn" onclick="logPlayerMove()">Log Player Move</button>
+    </div>
+
+    <!-- History -->
+    <div class="trade-history">
+      <div class="trade-history-label">Trade Log</div>
+      <div id="trade-history-list"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Main content -->
+<div class="main">
+
+  <!-- Left: Player pool -->
+  <div class="player-pool">
+    <div class="filter-bar">
+      <button class="filter-btn active" data-pos="ALL" onclick="setFilter('ALL', this)">All</button>
+      <button class="filter-btn" data-pos="QB" onclick="setFilter('QB', this)">QB</button>
+      <button class="filter-btn" data-pos="RB" onclick="setFilter('RB', this)">RB</button>
+      <button class="filter-btn" data-pos="WR" onclick="setFilter('WR', this)">WR</button>
+      <button class="filter-btn" data-pos="TE" onclick="setFilter('TE', this)">TE</button>
+      <span class="filter-count" id="filter-count"></span>
+    </div>
+
+    <table class="player-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th>College</th>
+          <th title="Combined: KTC + Dynasty Daddy + FantasyCalc, normalized">Combined Val</th>
+          <th class="th-center">Age</th>
+          <th>Notes</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="player-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- Right: Control panel -->
+  <div class="right-panel">
+
+    <!-- Current pick -->
+    <div class="panel-section">
+      <div class="section-label">Current Pick</div>
+      <div class="pick-control">
+        <button class="pick-nav" id="btn-prev" onclick="changePick(-1)">‹</button>
+        <div class="pick-display" id="pick-display">1</div>
+        <button class="pick-nav" id="btn-next" onclick="changePick(1)">›</button>
+      </div>
+      <div class="your-pick-banner" id="your-pick-banner">
+        <div class="banner-title" id="banner-title">YOUR PICK</div>
+        <div class="banner-sub" id="banner-sub">Pick 1.01 · Jesse</div>
+      </div>
+      <button class="btn-claude" id="btn-claude" onclick="askClaude()" style="display:none">
+        🤖 Ask Claude for Pick
+      </button>
+      <div class="claude-rec" id="claude-rec"></div>
+    </div>
+
+    <!-- My picks -->
+    <div class="panel-section">
+      <div class="section-label">My Picks (Round 1)</div>
+      <div id="my-picks-list"></div>
+    </div>
+
+    <!-- Top available -->
+    <div class="panel-section">
+      <div class="section-label">Top Available</div>
+      <div id="top-available"></div>
+    </div>
+
+    <!-- Draft log -->
+    <div class="panel-section">
+      <div class="section-label">Draft Log</div>
+      <div class="complete-banner" id="complete-banner">
+        <p>Round 1 Complete</p>
+        <small>All 10 picks assigned</small>
+      </div>
+      <div id="draft-log"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ── Data ────────────────────────────────────────────
+  const ROOKIES = {{ rookies | tojson }};
+  const OWNERS  = {{ owners | tojson }};
+  const JESSE_PICKS = [1, 3, 10]; // pick numbers (1-indexed, round 1)
+  const TOTAL_PICKS = 10;
+  const JESSE_PICK_LABELS  = { 1: "1.01 (own)", 3: "1.03 (Alex's)", 10: "1.10 (Patrick's)" };
+  const JESSE_PICK_KEY_MAP = { 1: "1.01", 3: "1.03", 10: "1.10" }; // maps pick# → picksHeld key
+  const STATE_KEY = 'dynasty_draft_2026';
+
+  // ── State ────────────────────────────────────────────
+  let state = {
+    currentPick: 1,
+    draftLog: [],       // [{pick, playerName, pos, ktcEst, teamOwner, isJesse}]
+    draftedNames: [],   // player names that have been drafted
+  };
+  let activeFilter = 'ALL';
+  let openPickerRow = null; // currently open team picker
+
+  // ── Persistence ──────────────────────────────────────
+  function applyStateDefaults() {
+    state.picksHeld    = state.picksHeld    || { "1.01": true, "1.03": true, "1.10": true, acquired: [] };
+    state.tradeLog     = state.tradeLog     || [];
+    state.rosterTrades = state.rosterTrades || [];
+  }
+
+  async function loadState() {
+    // Try server first (cross-device sync), fall back to localStorage
+    try {
+      const res = await fetch('/api/draft-state');
+      if (res.ok) {
+        const s = await res.json();
+        if (s?.currentPick !== undefined) {
+          state = s;
+          localStorage.setItem(STATE_KEY, JSON.stringify(state));
+          applyStateDefaults();
+          return;
+        }
+      }
+    } catch(e) {}
+    // Fall back to localStorage
+    try {
+      const raw = localStorage.getItem(STATE_KEY);
+      if (raw) state = JSON.parse(raw);
+    } catch(e) {}
+    applyStateDefaults();
+  }
+
+  function saveState() {
+    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    // Fire-and-forget sync to server
+    fetch('/api/draft-state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state),
+    }).catch(() => {});
+  }
+
+  function confirmReset() {
+    if (confirm('Reset the entire draft board? This cannot be undone.')) {
+      state = {
+        currentPick: 1,
+        draftLog: [],
+        draftedNames: [],
+        picksHeld:    { "1.01": true, "1.03": true, "1.10": true, acquired: [] },
+        tradeLog:     [],
+        rosterTrades: [],
+      };
+      saveState();
+      renderAll();
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────
+  function isJessePick(pickNum) { return JESSE_PICKS.includes(pickNum); }
+  function isDrafted(name) { return state.draftedNames.includes(name); }
+  function getJesseDraftedForSlot(pickNum) {
+    return state.draftLog.find(e => e.pick === pickNum && e.isJesse) || null;
+  }
+  function availablePlayers() {
+    return ROOKIES.filter(r => !isDrafted(r.name));
+  }
+  function nextOpenJessePick() {
+    return JESSE_PICKS.find(p => !state.draftLog.find(e => e.pick === p && e.isJesse)) || null;
+  }
+  function formatKtc(v) { return v >= 1000 ? (v/1000).toFixed(1) + 'k' : String(v); }
+
+  // ── Draft action ──────────────────────────────────────
+  function draftPlayer(playerName, teamOwner) {
+    const p = ROOKIES.find(r => r.name === playerName);
+    if (!p || isDrafted(playerName)) return;
+
+    const isJesse = teamOwner === 'Jesse';
+    state.draftLog.push({
+      pick: state.currentPick,
+      playerName,
+      pos: p.pos,
+      ktcEst: p.ktc_est,
+      teamOwner,
+      isJesse,
+    });
+    state.draftedNames.push(playerName);
+
+    // Auto-advance pick
+    if (state.currentPick < TOTAL_PICKS) {
+      state.currentPick++;
+    }
+
+    saveState();
+    closeAllPickers();
+    hideClaude();
+    renderAll();
+  }
+
+  // ── Filter ────────────────────────────────────────────
+  function setFilter(pos, btn) {
+    activeFilter = pos;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderPlayerTable();
+  }
+
+  // ── Pickers ───────────────────────────────────────────
+  // Delegated click handler — avoids inline onclick with string escaping issues
+  document.addEventListener('click', (e) => {
+    const draftBtn = e.target.closest('.btn-draft');
+    if (draftBtn) {
+      e.stopPropagation();
+      const rank   = parseInt(draftBtn.dataset.rank, 10);
+      const player = ROOKIES.find(p => p.rank === rank);
+      if (player) openPicker(player.name, draftBtn);
+      return;
+    }
+    if (!e.target.closest('.team-picker.open')) closeAllPickers();
+  });
+
+  function openPicker(playerName, btn) {
+    closeAllPickers();
+    const picker = btn.nextElementSibling;
+    picker.classList.add('open');
+    openPickerRow = picker;
+
+    picker.innerHTML = `<div class="team-picker-label">Draft for:</div>`;
+    const allOwners = ['Jesse', ...OWNERS.filter(o => o !== 'Jesse')];
+    allOwners.forEach(owner => {
+      const b = document.createElement('button');
+      b.className = 'team-opt' + (owner === 'Jesse' ? ' jesse-opt' : '');
+      b.textContent = owner;
+      b.onclick = (e) => { e.stopPropagation(); draftPlayer(playerName, owner); };
+      picker.appendChild(b);
+    });
+  }
+
+  function closeAllPickers() {
+    document.querySelectorAll('.team-picker.open').forEach(p => p.classList.remove('open'));
+    openPickerRow = null;
+  }
+
+  // ── Pick navigation ───────────────────────────────────
+  function changePick(delta) {
+    const next = state.currentPick + delta;
+    if (next >= 1 && next <= TOTAL_PICKS) {
+      state.currentPick = next;
+      saveState();
+      hideClaude();
+      renderCurrentPick();
+      renderPickTracker();
+    }
+  }
+
+  // ── Claude recommendation ─────────────────────────────
+  function hideClaude() {
+    document.getElementById('claude-rec').classList.remove('active');
+    document.getElementById('claude-rec').innerHTML = '';
+  }
+
+  async function askClaude() {
+    const btn = document.getElementById('btn-claude');
+    const recDiv = document.getElementById('claude-rec');
+    btn.disabled = true;
+    btn.textContent = '⏳ Asking Claude…';
+    recDiv.classList.remove('active');
+
+    const avail = availablePlayers().map(p => ({
+      name: p.name, pos: p.pos, ktc_est: p.ktc_est
+    }));
+
+    try {
+      const res = await fetch('/recommend-pick', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          team_id: 8,
+          pick_number: state.currentPick,
+          available_players: avail,
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+
+      const altsHtml = (data.alternatives || []).map(a =>
+        `<div class="rec-alt-item">• ${a}</div>`
+      ).join('');
+
+      recDiv.innerHTML = `
+        <div class="rec-pick">🎯 ${data.pick || '—'}</div>
+        <div class="rec-reasoning">${data.reasoning || ''}</div>
+        ${altsHtml ? `<div class="rec-alts"><div class="rec-alts-label">Alternatives</div>${altsHtml}</div>` : ''}
+      `;
+      recDiv.classList.add('active');
+    } catch (err) {
+      recDiv.innerHTML = `<div style="color:var(--red);font-size:.8rem">⚠️ ${err.message}</div>`;
+      recDiv.classList.add('active');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '🤖 Ask Claude for Pick';
+    }
+  }
+
+  // ── Render functions ──────────────────────────────────
+  function renderPickTracker() {
+    const container = document.getElementById('pick-slots');
+    container.innerHTML = '';
+    for (let i = 1; i <= TOTAL_PICKS; i++) {
+      const logEntry = state.draftLog.find(e => e.pick === i);
+      const isJesse  = isJessePick(i);
+      const isCurrent = i === state.currentPick;
+
+      // Check if Jesse traded this pick away
+      const pickKey  = JESSE_PICK_KEY_MAP[i];
+      const isTraded = isJesse && pickKey && state.picksHeld &&
+                       state.picksHeld[pickKey] === false;
+
+      const div = document.createElement('div');
+      div.className = 'pick-slot' +
+        (isJesse && !isTraded ? ' jesse-pick' : '') +
+        (isCurrent ? ' current-pick' : '') +
+        (isTraded  ? ' traded-pick' : '');
+
+      if (isTraded) {
+        const tradeEntry = (state.tradeLog || []).find(e => e.gave === pickKey);
+        const toText = tradeEntry ? `to ${tradeEntry.to}` : 'traded away';
+        div.innerHTML = `
+          <div class="slot-num">Pick ${i}</div>
+          <div class="slot-player traded-label">↗ Traded</div>
+          <div class="slot-owner">${toText}</div>
+        `;
+      } else {
+        const playerText  = logEntry ? logEntry.playerName.split(' ').pop() : '?';
+        const ownerText   = logEntry ? logEntry.teamOwner : (isJesse ? 'Jesse' : `Pick ${i}`);
+        const playerClass = (logEntry && isJesse) ? 'slot-player filled' : 'slot-player';
+        div.innerHTML = `
+          <div class="slot-num">${isJesse ? '★ ' : ''}Pick ${i}</div>
+          <div class="${playerClass}">${playerText}</div>
+          <div class="slot-owner">${ownerText}</div>
+        `;
+      }
+      container.appendChild(div);
+    }
+  }
+
+  function renderCurrentPick() {
+    const disp = document.getElementById('pick-display');
+    const banner = document.getElementById('your-pick-banner');
+    const btnClaude = document.getElementById('btn-claude');
+    const prevBtn = document.getElementById('btn-prev');
+    const nextBtn = document.getElementById('btn-next');
+    const pick    = state.currentPick;
+    const isJesse = isJessePick(pick);
+    const alreadyDrafted = state.draftLog.find(e => e.pick === pick);
+
+    // Check if Jesse traded this pick away
+    const pickKey  = JESSE_PICK_KEY_MAP[pick];
+    const isTraded = isJesse && pickKey && state.picksHeld &&
+                     state.picksHeld[pickKey] === false;
+
+    disp.textContent = `Pick ${pick}`;
+    disp.className = 'pick-display' + (isJesse && !isTraded ? ' jesse-turn' : '');
+    prevBtn.disabled = pick <= 1;
+    nextBtn.disabled = pick >= TOTAL_PICKS;
+
+    if (isJesse && !alreadyDrafted && !isTraded) {
+      banner.classList.add('active');
+      document.getElementById('banner-title').textContent = 'YOUR PICK';
+      document.getElementById('banner-sub').textContent =
+        `${JESSE_PICK_LABELS[pick] || `Pick ${pick}`} · Jesse`;
+      btnClaude.style.display = 'flex';
+    } else {
+      banner.classList.remove('active');
+      btnClaude.style.display = 'none';
+    }
+  }
+
+  function renderPlayerTable() {
+    const tbody = document.getElementById('player-tbody');
+    tbody.innerHTML = '';
+    const filtered = ROOKIES.filter(r => activeFilter === 'ALL' || r.pos === activeFilter);
+    document.getElementById('filter-count').textContent =
+      `${filtered.filter(r => !isDrafted(r.name)).length} available`;
+
+    filtered.forEach(r => {
+      const drafted = isDrafted(r.name);
+      const logEntry = state.draftLog.find(e => e.playerName === r.name);
+      const isJessePick_ = logEntry && logEntry.isJesse;
+
+      // Use rank (a safe integer) to identify player in click handler,
+      // avoiding the double-quote HTML attribute breakage from JSON.stringify(r.name)
+      const tr = document.createElement('tr');
+      tr.className = 'player-row' +
+        (drafted && !isJessePick_ ? ' drafted' : '') +
+        (isJessePick_ ? ' jesse-drafted' : '');
+
+      tr.innerHTML = `
+        <td class="rank-cell">${r.rank}</td>
+        <td class="name-cell">
+          <div class="player-name">
+            ${r.name}
+            <span class="pos-badge pos-${r.pos}">${r.pos}</span>
+          </div>
+        </td>
+        <td class="college-cell">${r.college}</td>
+        <td class="ktc-cell">
+          ${r.dyn_value.toLocaleString()}
+          ${!r.live ? '<span style="color:var(--muted);font-size:.63rem;margin-left:2px" title="Static KTC estimate">~est</span>'
+                    : r.src_count < 3 ? `<span style="color:var(--muted);font-size:.63rem;margin-left:2px" title="${r.src_count} source(s)">[${r.src_count}src]</span>` : ''}
+        </td>
+        <td class="age-cell">${r.age}</td>
+        <td class="notes-cell">${r.notes}</td>
+        <td class="action-cell">
+          ${drafted
+            ? `<div class="drafted-by ${logEntry.isJesse ? 'jesse' : ''}">
+                 ${logEntry.isJesse ? '✓ Jesse' : logEntry.teamOwner}
+                 <span style="color:var(--muted)"> · P${logEntry.pick}</span>
+               </div>`
+            : `<div class="draft-wrapper">
+                 <button class="btn-draft" data-rank="${r.rank}">Draft</button>
+                 <div class="team-picker"></div>
+               </div>`}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderMyPicks() {
+    const container = document.getElementById('my-picks-list');
+    container.innerHTML = '';
+    JESSE_PICKS.forEach(pickNum => {
+      const entry = state.draftLog.find(e => e.pick === pickNum && e.isJesse);
+      const div = document.createElement('div');
+      div.className = 'my-pick-item' + (entry ? ' filled' : '');
+      div.innerHTML = `
+        <div class="pick-item-slot">${JESSE_PICK_LABELS[pickNum] || `P${pickNum}`}</div>
+        <div class="pick-item-name ${entry ? '' : 'open'}">
+          ${entry ? entry.playerName : 'Open'}
+        </div>
+        ${entry ? `<span class="pos-badge pos-${entry.pos}" style="font-size:.6rem">${entry.pos}</span>` : ''}
+        ${entry ? `<div class="pick-item-ktc">${entry.ktcEst.toLocaleString()}</div>` : ''}
+      `;
+      container.appendChild(div);
+    });
+  }
+
+  function renderTopAvailable() {
+    const container = document.getElementById('top-available');
+    const top = availablePlayers().slice(0, 5);
+    if (top.length === 0) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:.8rem">All players drafted</div>';
+      return;
+    }
+    container.innerHTML = top.map((r, i) => `
+      <div class="top-avail-item">
+        <div class="ta-rank">#${r.rank}</div>
+        <div class="ta-name">
+          ${r.name}
+          <span class="pos-badge pos-${r.pos}" style="font-size:.6rem;margin-left:4px">${r.pos}</span>
+        </div>
+        <div class="ta-ktc">${r.ktc_est.toLocaleString()}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderDraftLog() {
+    const container = document.getElementById('draft-log');
+    if (state.draftLog.length === 0) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:.8rem">No picks yet</div>';
+      document.getElementById('complete-banner').classList.remove('active');
+      return;
+    }
+    const sorted = [...state.draftLog].sort((a, b) => a.pick - b.pick);
+    container.innerHTML = sorted.map(e => `
+      <div class="log-item ${e.isJesse ? 'jesse-log' : ''}">
+        <div class="log-pick">P${e.pick}</div>
+        <div class="log-player">
+          ${e.playerName}
+          <span class="pos-badge pos-${e.pos}" style="font-size:.6rem;margin-left:4px">${e.pos}</span>
+        </div>
+        <div class="log-team">${e.teamOwner}</div>
+        <button class="log-undo-btn" onclick="undoPick(${e.pick})" title="Undo this pick">✕</button>
+      </div>
+    `).join('');
+
+    const complete = state.draftLog.length >= TOTAL_PICKS;
+    document.getElementById('complete-banner').classList.toggle('active', complete);
+  }
+
+  // ── Undo a pick ───────────────────────────────────────
+  function undoPick(pickNum) {
+    const entry = state.draftLog.find(e => e.pick === pickNum);
+    if (!entry) return;
+    state.draftLog     = state.draftLog.filter(e => e.pick !== pickNum);
+    state.draftedNames = state.draftedNames.filter(n => n !== entry.playerName);
+    // Rewind current pick to the undone slot so it's ready to re-draft
+    if (state.currentPick > pickNum) state.currentPick = pickNum;
+    saveState();
+    hideClaude();
+    renderAll();
+  }
+
+  function renderAll() {
+    renderPickTracker();
+    renderCurrentPick();
+    renderPlayerTable();
+    renderMyPicks();
+    renderTopAvailable();
+    renderDraftLog();
+    renderTradesPanel();
+  }
+
+  // ── In-Draft Trade Panel ─────────────────────────────
+  let tradePanelOpen = false;
+  let activeTradeTab = 'pick';
+
+  function toggleTradesPanel() {
+    tradePanelOpen = !tradePanelOpen;
+    document.getElementById('trade-log-body').style.display = tradePanelOpen ? 'block' : 'none';
+    document.getElementById('trade-log-chevron').textContent = tradePanelOpen ? '▼' : '▶';
+    if (tradePanelOpen) buildGivePickOptions();
+  }
+
+  function switchTradeTab(tab, btn) {
+    activeTradeTab = tab;
+    document.querySelectorAll('.trade-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('trade-form-pick').style.display   = tab === 'pick'   ? 'block' : 'none';
+    document.getElementById('trade-form-player').style.display = tab === 'player' ? 'block' : 'none';
+  }
+
+  function buildGivePickOptions() {
+    const sel = document.getElementById('trade-give-pick');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const ph = state.picksHeld || {};
+    const standard = [
+      { label: '1.01 (own)',        key: '1.01' },
+      { label: "1.03 (Alex's)",     key: '1.03' },
+      { label: "1.10 (Patrick's)",  key: '1.10' },
+    ];
+    standard.forEach(p => {
+      if (ph[p.key] !== false) {
+        const opt = document.createElement('option');
+        opt.value = p.key;
+        opt.textContent = p.label;
+        sel.appendChild(opt);
+      }
+    });
+    // Acquired picks
+    (ph.acquired || []).forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.label;
+      opt.textContent = p.label;
+      sel.appendChild(opt);
+    });
+    if (sel.options.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '— no picks to trade —';
+      opt.disabled = true;
+      sel.appendChild(opt);
+    }
+  }
+
+  function logPickTrade() {
+    const give        = document.getElementById('trade-give-pick').value;
+    const givePlayers = document.getElementById('trade-give-players').value.trim();
+    const to          = document.getElementById('trade-to-team').value.trim();
+    const received    = document.getElementById('trade-receives').value.trim();
+    if (!give || !to || !received) { alert('Please fill in pick, to team, and received fields.'); return; }
+
+    // Mark pick as traded
+    if (state.picksHeld.hasOwnProperty(give)) {
+      state.picksHeld[give] = false;
+    } else {
+      state.picksHeld.acquired = (state.picksHeld.acquired || []).filter(p => p.label !== give);
+    }
+    state.tradeLog.push({ id: Date.now(), gave: give, alsoGives: givePlayers || null, to, received });
+
+    document.getElementById('trade-give-players').value = '';
+    document.getElementById('trade-to-team').value = '';
+    document.getElementById('trade-receives').value = '';
+    saveState();
+    renderAll();
+  }
+
+  function logPlayerMove() {
+    const player   = document.getElementById('move-player').value.trim();
+    const fromTeam = document.getElementById('move-from').value.trim();
+    const toTeam   = document.getElementById('move-to').value.trim();
+    const note     = document.getElementById('move-note').value.trim();
+    if (!player || !fromTeam || !toTeam) { alert('Please fill in player, from team, and to team.'); return; }
+
+    state.rosterTrades.push({ id: Date.now(), player, fromTeam, toTeam, note });
+
+    document.getElementById('move-player').value = '';
+    document.getElementById('move-from').value   = '';
+    document.getElementById('move-to').value     = '';
+    document.getElementById('move-note').value   = '';
+    saveState();
+    renderTradesPanel();
+  }
+
+  function undoTrade(id, type) {
+    if (type === 'pick') {
+      const entry = (state.tradeLog || []).find(e => e.id === id);
+      if (entry) {
+        // Restore pick ownership
+        if (state.picksHeld.hasOwnProperty(entry.gave)) {
+          state.picksHeld[entry.gave] = true;
+        }
+        state.tradeLog = state.tradeLog.filter(e => e.id !== id);
+      }
+    } else {
+      state.rosterTrades = (state.rosterTrades || []).filter(e => e.id !== id);
+    }
+    saveState();
+    renderAll();
+  }
+
+  function renderTradesPanel() {
+    const total = (state.tradeLog || []).length + (state.rosterTrades || []).length;
+    const badge = document.getElementById('trade-log-count');
+    if (badge) badge.textContent = total > 0 ? `${total} logged` : '0 logged';
+
+    if (tradePanelOpen) buildGivePickOptions();
+
+    const histEl = document.getElementById('trade-history-list');
+    if (!histEl) return;
+
+    const allEntries = [
+      ...(state.tradeLog     || []).map(e => ({ ...e, type: 'pick' })),
+      ...(state.rosterTrades || []).map(e => ({ ...e, type: 'player' })),
+    ].sort((a, b) => a.id - b.id);
+
+    if (allEntries.length === 0) {
+      histEl.innerHTML = '<div style="color:var(--muted);font-size:.8rem;padding:4px 0">No trades logged yet</div>';
+      return;
+    }
+
+    histEl.innerHTML = allEntries.map(e => {
+      if (e.type === 'pick') {
+        const givesStr = e.alsoGives ? `${e.gave} + ${e.alsoGives}` : e.gave;
+        return `
+          <div class="trade-entry">
+            <div class="trade-entry-icon">↗</div>
+            <div class="trade-entry-text">
+              <strong>${givesStr}</strong> → ${e.to}
+              <span class="trade-entry-detail">received: ${e.received}</span>
+            </div>
+            <button class="trade-undo-btn" onclick="undoTrade(${e.id}, 'pick')">Undo</button>
+          </div>`;
+      } else {
+        const noteStr = e.note ? ` (${e.note})` : '';
+        return `
+          <div class="trade-entry trade-entry-player">
+            <div class="trade-entry-icon">↔</div>
+            <div class="trade-entry-text">
+              <strong>${e.player}</strong>: ${e.fromTeam} → ${e.toTeam}${noteStr}
+            </div>
+            <button class="trade-undo-btn" onclick="undoTrade(${e.id}, 'player')">Undo</button>
+          </div>`;
+      }
+    }).join('');
+  }
+
+  // ── Init ──────────────────────────────────────────────
+  loadState().then(() => renderAll());
+</script>
+</body>
+</html>

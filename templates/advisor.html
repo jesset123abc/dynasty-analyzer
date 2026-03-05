@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dynasty Advisor · AI Chat</title>
+  <style>
+    :root {
+      --bg:        #0d1117;
+      --bg-card:   #161b22;
+      --bg-input:  #0d1117;
+      --border:    #30363d;
+      --border-hi: #484f58;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --green-dim: rgba(63,185,80,.12);
+      --green-bdr: rgba(63,185,80,.3);
+      --blue:      #58a6ff;
+      --blue-dim:  rgba(88,166,255,.08);
+      --blue-bdr:  rgba(88,166,255,.25);
+      --purple:    #bc8cff;
+      --purple-dim:rgba(188,140,255,.1);
+      --purple-bdr:rgba(188,140,255,.3);
+      --gold:      #e3b341;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ───────────────────────────────────────── */
+    .header {
+      background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .back-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.82rem;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: color .15s;
+    }
+    .back-link:hover { color: var(--text); }
+    .header h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--purple) 0%, var(--blue) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header-sub { color: var(--muted); font-size: 0.75rem; margin-top: 1px; }
+
+    /* Team selector */
+    .team-select-wrap { display: flex; align-items: center; gap: 8px; }
+    .team-select-wrap label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+    select {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 28px 5px 10px;
+      color: var(--text);
+      font-size: 0.82rem;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%238b949e' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 9px center;
+    }
+    select:focus { outline: none; border-color: var(--blue); }
+    select option { background: #1c2128; }
+
+    /* ── Quick prompts bar ────────────────────────────── */
+    .chips-bar {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+    .chip {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 5px 13px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+    .chip:hover { border-color: var(--purple-bdr); color: var(--purple); background: var(--purple-dim); }
+
+    /* ── Messages area ────────────────────────────────── */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      color: var(--muted);
+      padding: 40px;
+      gap: 12px;
+    }
+    .empty-icon { font-size: 2.5rem; margin-bottom: 4px; }
+    .empty-title { font-size: 1rem; font-weight: 600; color: var(--text); }
+    .empty-sub { font-size: 0.85rem; line-height: 1.6; max-width: 380px; }
+
+    /* Message rows */
+    .msg-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      max-width: 820px;
+    }
+    .msg-row.user { flex-direction: row-reverse; margin-left: auto; }
+
+    .avatar {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .avatar-claude { background: var(--purple-dim); border: 1px solid var(--purple-bdr); color: var(--purple); }
+    .avatar-user   { background: var(--green-dim);  border: 1px solid var(--green-bdr);  color: var(--green); }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 12px;
+      line-height: 1.65;
+      font-size: 0.88rem;
+      max-width: 680px;
+    }
+    .bubble-claude {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-top-left-radius: 4px;
+      color: var(--text);
+    }
+    .bubble-user {
+      background: var(--blue-dim);
+      border: 1px solid var(--blue-bdr);
+      border-top-right-radius: 4px;
+      color: var(--text);
+    }
+
+    /* Markdown-ish formatting inside Claude bubbles */
+    .bubble-claude strong { color: #fff; font-weight: 600; }
+    .bubble-claude em { color: var(--gold); font-style: normal; font-weight: 500; }
+    .bubble-claude code {
+      background: rgba(255,255,255,.07);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 0.82rem;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+    }
+    .bubble-claude ul, .bubble-claude ol { padding-left: 18px; margin: 6px 0; }
+    .bubble-claude li { margin: 3px 0; }
+    .bubble-claude p + p { margin-top: 8px; }
+    .bubble-claude h3 { font-size: 0.9rem; font-weight: 700; color: var(--purple); margin: 10px 0 4px; }
+
+    /* Typing cursor */
+    .cursor {
+      display: inline-block;
+      width: 2px; height: 14px;
+      background: var(--purple);
+      margin-left: 2px;
+      vertical-align: middle;
+      animation: blink .7s infinite;
+    }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+    /* ── Input bar ────────────────────────────────────── */
+    .input-bar {
+      border-top: 1px solid var(--border);
+      background: var(--bg-card);
+      padding: 14px 20px;
+      flex-shrink: 0;
+    }
+    .input-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    textarea {
+      flex: 1;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: var(--text);
+      font-size: 0.9rem;
+      font-family: inherit;
+      resize: none;
+      min-height: 44px;
+      max-height: 160px;
+      overflow-y: auto;
+      line-height: 1.5;
+      transition: border-color .15s;
+    }
+    textarea::placeholder { color: var(--muted); }
+    textarea:focus { outline: none; border-color: var(--purple); }
+
+    .send-btn {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, #6e40c9, #9765f0);
+      border: 1px solid rgba(188,140,255,.4);
+      border-radius: 10px;
+      color: #fff;
+      font-size: 1.1rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      transition: all .2s;
+    }
+    .send-btn:hover { background: linear-gradient(135deg, #7f52d6, #a97cf5); box-shadow: 0 4px 12px rgba(150,100,240,.35); }
+    .send-btn:disabled { opacity: .35; cursor: not-allowed; box-shadow: none; }
+
+    .input-hint {
+      text-align: center;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border-hi); }
+
+    @media (max-width: 600px) {
+      .chips-bar { padding: 8px 12px; }
+      .messages  { padding: 16px 12px; }
+      .input-bar { padding: 10px 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <a href="/" class="back-link">← Trade Analyzer</a>
+    <div>
+      <h1>🤖 Dynasty Advisor</h1>
+      <div class="header-sub">Ask anything · Live league context · Powered by Claude</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <div class="team-select-wrap">
+      <label for="team-sel">My Team:</label>
+      <select id="team-sel">
+        {% for team in teams %}
+        <option value="{{ team.id }}" {% if team.id == 8 %}selected{% endif %}>
+          {{ team.owner.split()[0] }} — {{ team.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <a href="/rankings" style="
+      background:var(--bg-card);border:1px solid var(--border);border-radius:6px;
+      padding:5px 12px;color:var(--muted);font-size:.78rem;font-weight:600;
+      text-decoration:none;display:flex;align-items:center;gap:5px;white-space:nowrap;
+      transition:all .15s;
+    " onmouseover="this.style.color='var(--text)';this.style.borderColor='var(--border-hi)'"
+       onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border)'">
+      📊 Rankings
+    </a>
+    <button onclick="clearSession()" style="
+      background:transparent;border:1px solid var(--border);border-radius:6px;
+      padding:5px 12px;color:var(--muted);font-size:.78rem;cursor:pointer;
+      transition:all .15s;white-space:nowrap;
+    " onmouseover="this.style.borderColor='var(--red,#f85149)';this.style.color='var(--red,#f85149)'"
+       onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+      Clear Chat
+    </button>
+  </div>
+</header>
+
+<!-- Context status bar -->
+<div id="ctx-bar" style="
+  background:#0d1117;border-bottom:1px solid var(--border);
+  padding:6px 20px;font-size:.72rem;color:var(--muted);
+  display:flex;align-items:center;gap:10px;flex-shrink:0;min-height:28px;
+"></div>
+
+<!-- Quick prompts -->
+<div class="chips-bar">
+  <span style="font-size:.72rem;color:var(--muted);align-self:center;margin-right:2px">Quick:</span>
+  <button class="chip" onclick="sendChip(this)">What's my biggest roster weakness?</button>
+  <button class="chip" onclick="sendChip(this)">Rate my 2026 draft strategy</button>
+  <button class="chip" onclick="sendChip(this)">Which teams should I target for trades?</button>
+  <button class="chip" onclick="sendChip(this)">How am I doing in the draft so far?</button>
+  <button class="chip" onclick="sendChip(this)">Who should I take with my next pick?</button>
+  <button class="chip" onclick="sendChip(this)">Critique the last set of trade proposals</button>
+  <button class="chip" onclick="sendChip(this)">Is Brock Purdy a long-term answer in Superflex?</button>
+  <button class="chip" onclick="sendChip(this)">What's my dynasty outlook for the next 3 years?</button>
+</div>
+
+<!-- Messages -->
+<div class="messages" id="messages">
+  <div class="empty-state" id="empty-state">
+    <div class="empty-icon">🏈</div>
+    <div class="empty-title">Your Dynasty Advisor is ready</div>
+    <div class="empty-sub">Ask anything about your roster, trades, draft strategy, or dynasty outlook. Claude has full context on all 10 rosters and live player values.</div>
+  </div>
+</div>
+
+<!-- Input bar -->
+<div class="input-bar">
+  <div class="input-row">
+    <textarea
+      id="input"
+      placeholder="Ask about trades, your roster, draft strategy…"
+      rows="1"
+      onkeydown="handleKey(event)"
+      oninput="autoResize(this)"
+    ></textarea>
+    <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send">
+      ➤
+    </button>
+  </div>
+  <div class="input-hint">Enter to send · Shift+Enter for new line</div>
+</div>
+
+<script>
+  // ── State ─────────────────────────────────────────────
+  const history  = [];   // [{role, content}] — full conversation sent to Claude
+  let streaming  = false;
+  const STORAGE_KEY = 'dynasty_advisor_chat';
+  const DRAFT_KEY   = 'dynasty_draft_2026';
+  const TRADES_KEY  = 'dynasty_last_trades';
+
+  // ── Cross-page context ────────────────────────────────
+  // Build a plain-text summary of draft board + last trades from localStorage
+  function buildAppContext() {
+    const parts = [];
+
+    try {
+      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+      if (draft && draft.draftLog && draft.draftLog.length > 0) {
+        const lines = [`LIVE DRAFT BOARD — current pick: ${draft.currentPick} of 10`];
+        draft.draftLog.forEach(e => {
+          const me = e.isJesse ? ' ← Jesse' : '';
+          lines.push(`  Pick ${e.pick}: ${e.playerName} (${e.pos}) → ${e.teamOwner}${me}`);
+        });
+        const jessePicks = [1, 3, 10];
+        const labels = { 1: '1.01 (own)', 3: '1.03 (Alex\'s)', 10: '1.10 (Patrick\'s)' };
+        const pending = jessePicks.filter(p => !draft.draftLog.find(e => e.pick === p && e.isJesse));
+        if (pending.length) {
+          lines.push(`Jesse's pending picks: ${pending.map(p => labels[p]).join(', ')}`);
+        } else {
+          lines.push('Jesse has made all his picks.');
+        }
+        parts.push(lines.join('\n'));
+      }
+    } catch(e) {}
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(TRADES_KEY) || 'null');
+      if (saved && saved.trades && saved.trades.length > 0) {
+        const ageMin = Math.floor((Date.now() - saved.savedAt) / 60000);
+        const modeLabel = saved.mode === 'draft_day' ? 'Draft Day Scenarios' : 'Trade Analyzer';
+        const when = ageMin < 2 ? 'just now' : `${ageMin} min ago`;
+        const lines = [`LAST TRADE ANALYSIS (${modeLabel} · ${saved.tradeStyle} · ${when}):`];
+        saved.trades.slice(0, 6).forEach((t, i) => {
+          const gives = (t.my_team_gives || []).join(', ');
+          const gets  = (t.i_receive  || []).join(', ');
+          lines.push(`  ${i+1}. vs ${t.trade_partner} (${t.trade_partner_owner}) | Grade: ${t.grade}`);
+          lines.push(`     Jesse gives: ${gives}`);
+          lines.push(`     Jesse gets:  ${gets}`);
+          if (t.value_check) lines.push(`     ${t.value_check}`);
+        });
+        parts.push(lines.join('\n'));
+      }
+    } catch(e) {}
+
+    return parts.join('\n\n');
+  }
+
+  // Update the thin context status bar above the chips
+  function updateContextBar() {
+    const bar = document.getElementById('ctx-bar');
+    if (!bar) return;
+    const pills = [];
+    try {
+      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+      if (draft && draft.draftLog && draft.draftLog.length > 0) {
+        pills.push(`<span style="color:var(--green)">📋 Draft board: pick ${draft.currentPick}/10 live</span>`);
+      }
+    } catch(e) {}
+    try {
+      const saved = JSON.parse(localStorage.getItem(TRADES_KEY) || 'null');
+      if (saved && saved.trades && saved.trades.length > 0) {
+        const ageMin = Math.floor((Date.now() - saved.savedAt) / 60000);
+        const when = ageMin < 2 ? 'just now' : `${ageMin}m ago`;
+        const mode = saved.mode === 'draft_day' ? 'Draft Day' : 'Trade Analyzer';
+        pills.push(`<span style="color:var(--gold)">⚡ ${mode} (${saved.trades.length} proposals, ${when})</span>`);
+      }
+    } catch(e) {}
+    if (pills.length) {
+      bar.innerHTML = '<span style="color:var(--muted)">Advisor sees:</span> ' + pills.join('<span style="color:var(--border)"> · </span>');
+      bar.style.display = 'flex';
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+
+  // ── Session persistence (localStorage — shared across tabs) ──
+  function saveSession() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(history)); } catch(e) {}
+  }
+
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (!Array.isArray(saved) || saved.length === 0) return;
+      saved.forEach(m => {
+        history.push(m);
+        addBubble(m.role === 'user' ? 'user' : 'assistant', m.content, false);
+      });
+    } catch(e) {}
+  }
+
+  function clearSession() {
+    localStorage.removeItem(STORAGE_KEY);
+    history.length = 0;
+    const msgs = document.getElementById('messages');
+    msgs.innerHTML = `
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">🏈</div>
+        <div class="empty-title">Your Dynasty Advisor is ready</div>
+        <div class="empty-sub">Ask anything about your roster, trades, draft strategy, or dynasty outlook. Claude has full context on all 10 rosters and live player values.</div>
+      </div>`;
+  }
+
+  // ── Helpers ───────────────────────────────────────────
+  function teamId() {
+    return parseInt(document.getElementById('team-sel').value);
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }
+
+  function sendChip(btn) {
+    document.getElementById('input').value = btn.textContent;
+    sendMessage();
+  }
+
+  function scrollToBottom() {
+    const el = document.getElementById('messages');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  // ── Render a simple markdown-ish conversion ───────────
+  function renderMarkdown(text) {
+    return text
+      // Bold
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      // Italics (used sparingly)
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      // Inline code
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      // H3
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      // Bullet lists
+      .replace(/^[-•] (.+)$/gm, '<li>$1</li>')
+      .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+      // Numbered lists
+      .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+      // Paragraphs
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/^(?!<[hul])(.+)$/gm, (m) => m.startsWith('<') ? m : m)
+      // Line breaks within paragraphs
+      .replace(/\n(?!<)/g, '<br>');
+  }
+
+  // ── Add message bubble ────────────────────────────────
+  function addBubble(role, text, withCursor) {
+    document.getElementById('empty-state')?.remove();
+
+    const row = document.createElement('div');
+    row.className = `msg-row ${role}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = `avatar avatar-${role === 'user' ? 'user' : 'claude'}`;
+    avatar.textContent = role === 'user' ? 'J' : 'AI';
+
+    const bubble = document.createElement('div');
+    bubble.className = `bubble bubble-${role === 'user' ? 'user' : 'claude'}`;
+
+    if (role === 'user') {
+      bubble.textContent = text;
+    } else {
+      bubble.innerHTML = renderMarkdown(text || '');
+      if (withCursor) {
+        const cur = document.createElement('span');
+        cur.className = 'cursor';
+        cur.id = 'live-cursor';
+        bubble.appendChild(cur);
+      }
+    }
+
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+    document.getElementById('messages').appendChild(row);
+    scrollToBottom();
+    return bubble;
+  }
+
+  // ── Send message ──────────────────────────────────────
+  async function sendMessage() {
+    if (streaming) return;
+    const input = document.getElementById('input');
+    const text  = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+
+    // Show user bubble
+    addBubble('user', text);
+
+    // Add to history and persist user message immediately
+    history.push({ role: 'user', content: text });
+    saveSession();
+
+    // Lock UI
+    streaming = true;
+    document.getElementById('send-btn').disabled = true;
+
+    // Create Claude bubble with cursor
+    const clBubble = addBubble('assistant', '', true);
+    let accumulated = '';
+
+    try {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: history, team_id: teamId(), app_context: buildAppContext() }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Request failed');
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();   // keep incomplete line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6).trim();
+          if (payload === '[DONE]') break;
+
+          const parsed = JSON.parse(payload);
+          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.text) {
+            accumulated += parsed.text;
+            // Remove cursor, re-render, re-add cursor
+            document.getElementById('live-cursor')?.remove();
+            clBubble.innerHTML = renderMarkdown(accumulated);
+            const cur = document.createElement('span');
+            cur.className = 'cursor';
+            cur.id = 'live-cursor';
+            clBubble.appendChild(cur);
+            scrollToBottom();
+          }
+        }
+      }
+
+      // Final render — remove cursor
+      document.getElementById('live-cursor')?.remove();
+      clBubble.innerHTML = renderMarkdown(accumulated);
+
+      // Add assistant response to history and persist
+      history.push({ role: 'assistant', content: accumulated });
+      saveSession();
+
+    } catch (err) {
+      document.getElementById('live-cursor')?.remove();
+      clBubble.innerHTML = `<span style="color:var(--red,#f85149)">⚠️ ${err.message}</span>`;
+    } finally {
+      streaming = false;
+      document.getElementById('send-btn').disabled = false;
+      document.getElementById('input').focus();
+    }
+  }
+
+  // Restore previous session on page load
+  loadSession();
+  updateContextBar();
+</script>
+</body>
+</html>

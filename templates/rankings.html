@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dynasty Rankings — Value Breakdown</title>
+  <style>
+    :root {
+      --bg:        #0d1117;
+      --bg-card:   #161b22;
+      --bg-input:  #0d1117;
+      --border:    #30363d;
+      --border-hi: #484f58;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --green-dim: rgba(63,185,80,.15);
+      --green-bdr: rgba(63,185,80,.35);
+      --blue:      #58a6ff;
+      --blue-dim:  rgba(88,166,255,.08);
+      --blue-bdr:  rgba(88,166,255,.25);
+      --red:       #f85149;
+      --red-dim:   rgba(248,81,73,.10);
+      --gold:      #e3b341;
+      --gold-dim:  rgba(227,179,65,.12);
+      --gold-bdr:  rgba(227,179,65,.35);
+      --purple:    #bc8cff;
+      --purple-dim:rgba(188,140,255,.12);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      font-size: 14px;
+    }
+
+    /* ── Header ─────────────────────────────────────── */
+    .header {
+      background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .header-left { display: flex; align-items: center; gap: 14px; flex: 1; }
+    .header h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--blue) 0%, var(--purple) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header-sub { color: var(--muted); font-size: 0.75rem; margin-top: 2px; }
+    .header-nav { display: flex; gap: 8px; align-items: center; }
+
+    .nav-btn {
+      border-radius: 7px;
+      padding: 7px 14px;
+      color: #fff;
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: box-shadow .2s;
+      border: 1px solid transparent;
+    }
+    .nav-btn-gray {
+      background: var(--bg-card);
+      border-color: var(--border);
+      color: var(--muted);
+    }
+    .nav-btn-gray:hover { border-color: var(--border-hi); color: var(--text); }
+
+    /* ── Controls bar ───────────────────────────────── */
+    .controls {
+      padding: 16px 28px 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .filter-group { display: flex; gap: 4px; }
+    .filter-btn {
+      padding: 5px 13px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .filter-btn:hover { border-color: var(--border-hi); color: var(--text); }
+    .filter-btn.active {
+      background: var(--blue-dim);
+      border-color: var(--blue-bdr);
+      color: var(--blue);
+    }
+    .search-wrap {
+      margin-left: auto;
+      position: relative;
+    }
+    .search-wrap input {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px 12px 6px 30px;
+      color: var(--text);
+      font-size: 0.82rem;
+      width: 220px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .search-wrap input:focus { border-color: var(--blue-bdr); }
+    .search-wrap::before {
+      content: "🔍";
+      position: absolute;
+      left: 9px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.75rem;
+      pointer-events: none;
+    }
+    .stats-line {
+      color: var(--muted);
+      font-size: 0.78rem;
+      padding: 8px 28px 0;
+    }
+
+    /* ── Table ──────────────────────────────────────── */
+    .table-wrap {
+      padding: 12px 28px 28px;
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    thead th {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 9px 11px;
+      text-align: left;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      cursor: pointer;
+      white-space: nowrap;
+      user-select: none;
+    }
+    thead th:hover { color: var(--text); border-color: var(--border-hi); }
+    thead th.sort-asc::after  { content: " ▲"; color: var(--blue); }
+    thead th.sort-desc::after { content: " ▼"; color: var(--blue); }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background .1s;
+    }
+    tbody tr:hover { background: var(--blue-dim); }
+    tbody tr.disagree { background: var(--gold-dim); }
+    tbody tr.disagree:hover { background: rgba(227,179,65,.2); }
+
+    td {
+      padding: 8px 11px;
+      border-right: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    td:last-child { border-right: none; }
+
+    /* rank column */
+    td.rank-col { color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; width: 44px; }
+    .pos-rank { color: var(--muted); font-size: 0.72rem; display: block; }
+
+    /* name column */
+    td.name-col { font-weight: 600; color: var(--text); }
+
+    /* position badge */
+    .pos-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: .03em;
+    }
+    .pos-QB { background: rgba(88,166,255,.18); color: var(--blue); }
+    .pos-RB { background: rgba(63,185,80,.15);  color: var(--green); }
+    .pos-WR { background: rgba(188,140,255,.18);color: var(--purple); }
+    .pos-TE { background: rgba(227,179,65,.15); color: var(--gold); }
+    .pos-K  { background: rgba(139,148,158,.15);color: var(--muted); }
+    .pos-DEF{ background: rgba(248,81,73,.15);  color: var(--red); }
+
+    /* value cells */
+    td.val-combined {
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+    td.val-source {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+    }
+    td.val-source.has-data { color: var(--text); }
+    td.val-source.missing  { color: #3d444d; }
+
+    /* source dot */
+    .src-count { text-align: center; }
+    .src-dots { display: flex; gap: 3px; justify-content: center; }
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--border-hi);
+    }
+    .dot.on { background: var(--green); }
+
+    /* age */
+    td.age-col { color: var(--muted); text-align: center; }
+
+    /* disagreement badge */
+    .dis-badge {
+      display: inline-block;
+      background: var(--gold-dim);
+      border: 1px solid var(--gold-bdr);
+      color: var(--gold);
+      border-radius: 4px;
+      font-size: 0.68rem;
+      padding: 1px 5px;
+      margin-left: 4px;
+      font-weight: 600;
+    }
+
+    /* ── Section divider ─────────────────────────── */
+    .section-header {
+      padding: 20px 28px 10px;
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+    }
+    .section-header h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--gold);
+    }
+    .section-header p { color: var(--muted); font-size: 0.78rem; margin-top: 3px; }
+
+    /* picks table uses same table styles */
+    .picks-table td.pick-name { font-weight: 600; min-width: 200px; }
+    .picks-table td.pick-val  { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+    .picks-table td.pick-note { color: var(--muted); font-size: 0.78rem; }
+    .jesse-pick { color: var(--gold); }
+
+    /* empty state */
+    .empty { padding: 40px; text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div>
+      <h1>📊 Dynasty Rankings</h1>
+      <div class="header-sub">KTC · Dynasty Daddy · FantasyCalc — normalized 0–9999 · 15-min cache</div>
+    </div>
+  </div>
+  <nav class="header-nav">
+    <a href="/" class="nav-btn nav-btn-gray">🏈 Trade Analyzer</a>
+    <a href="/advisor" class="nav-btn nav-btn-gray">🤖 Advisor</a>
+    <a href="/draft-board" class="nav-btn nav-btn-gray">🏆 Draft Board</a>
+  </nav>
+</header>
+
+<!-- Controls -->
+<div class="controls">
+  <div class="filter-group" id="pos-filter">
+    <button class="filter-btn active" data-pos="ALL" onclick="setPos(this,'ALL')">All</button>
+    <button class="filter-btn" data-pos="QB"  onclick="setPos(this,'QB')">QB</button>
+    <button class="filter-btn" data-pos="RB"  onclick="setPos(this,'RB')">RB</button>
+    <button class="filter-btn" data-pos="WR"  onclick="setPos(this,'WR')">WR</button>
+    <button class="filter-btn" data-pos="TE"  onclick="setPos(this,'TE')">TE</button>
+  </div>
+  <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--muted);cursor:pointer">
+    <input type="checkbox" id="dis-only" onchange="applyFilters()" style="cursor:pointer">
+    Show disagreements only
+  </label>
+  <div class="search-wrap">
+    <input type="text" id="search" placeholder="Search player…" oninput="applyFilters()">
+  </div>
+</div>
+<div class="stats-line" id="stats-line"></div>
+
+<!-- Players table -->
+<div class="table-wrap">
+  <table id="rankings-table">
+    <thead>
+      <tr>
+        <th onclick="sortBy('rank')" class="sort-asc" data-col="rank">#</th>
+        <th onclick="sortBy('name')" data-col="name">Player</th>
+        <th onclick="sortBy('position')" data-col="position">Pos</th>
+        <th onclick="sortBy('age')" data-col="age">Age</th>
+        <th onclick="sortBy('combined')" data-col="combined">Combined</th>
+        <th onclick="sortBy('ktc')" data-col="ktc">KTC</th>
+        <th onclick="sortBy('dd')" data-col="dd">DD</th>
+        <th onclick="sortBy('fc')" data-col="fc">FC</th>
+        <th data-col="sources_count" style="cursor:default">Srcs</th>
+      </tr>
+    </thead>
+    <tbody id="table-body"></tbody>
+  </table>
+  <div class="empty" id="empty-msg" style="display:none">No players match the current filters.</div>
+</div>
+
+<!-- Picks section -->
+<div class="section-header">
+  <h2>🎯 Draft Pick Values</h2>
+  <p>KTC-calibrated values only — Dynasty Daddy and FantasyCalc don't provide per-slot pick values.</p>
+</div>
+<div class="table-wrap" style="padding-top:0">
+  <table class="picks-table">
+    <thead>
+      <tr>
+        <th style="cursor:default">Pick</th>
+        <th style="cursor:default;text-align:right">KTC Value</th>
+        <th style="cursor:default">Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in picks %}
+      <tr>
+        <td class="pick-name {% if 'Jesse' in p.name %}jesse-pick{% endif %}">
+          {{ p.name }}
+          {% if 'Jesse' in p.name %}<span style="font-size:0.72rem;opacity:.7"> ★ held by Jesse</span>{% endif %}
+        </td>
+        <td class="pick-val">{{ p.ktc }}</td>
+        <td class="pick-note">{{ p.note }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+// ── Raw data from server ─────────────────────────────────────────────────────
+const RAW = {{ players | tojson }};
+
+// ── State ────────────────────────────────────────────────────────────────────
+let activePos = 'ALL';
+let sortCol   = 'rank';
+let sortDir   = 1;  // 1 = asc, -1 = desc
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function valOrNull(v) { return (v === null || v === undefined) ? null : v; }
+
+function disagreement(row) {
+  const vals = [row.ktc, row.dd, row.fc].filter(v => v !== null && v !== undefined && v > 0);
+  if (vals.length < 2) return 0;
+  const max = Math.max(...vals);
+  const min = Math.min(...vals);
+  return max > 0 ? (max - min) / max : 0;
+}
+
+function posClass(pos) {
+  const map = { QB:'pos-QB', RB:'pos-RB', WR:'pos-WR', TE:'pos-TE', K:'pos-K', DEF:'pos-DEF' };
+  return map[pos] || '';
+}
+
+function fmtVal(v) {
+  if (v === null || v === undefined) return '<td class="val-source missing">—</td>';
+  return `<td class="val-source has-data">${v.toLocaleString()}</td>`;
+}
+
+function srcDots(row) {
+  const srcs = ['ktc','dd','fc'];
+  const dots = srcs.map(s => `<div class="dot ${row[s] !== null && row[s] !== undefined ? 'on' : ''}"></div>`).join('');
+  return `<td class="src-count"><div class="src-dots">${dots}</div></td>`;
+}
+
+// ── Filter + Render ───────────────────────────────────────────────────────────
+function applyFilters() {
+  const query   = document.getElementById('search').value.trim().toLowerCase();
+  const disOnly = document.getElementById('dis-only').checked;
+
+  let rows = RAW.filter(r => {
+    if (activePos !== 'ALL' && r.position !== activePos) return false;
+    if (query && !r.name.toLowerCase().includes(query)) return false;
+    if (disOnly && disagreement(r) < 0.20) return false;
+    return true;
+  });
+
+  // Sort
+  rows.sort((a, b) => {
+    let av = a[sortCol], bv = b[sortCol];
+    if (av === null || av === undefined) av = sortDir === 1 ? Infinity : -Infinity;
+    if (bv === null || bv === undefined) bv = sortDir === 1 ? Infinity : -Infinity;
+    if (typeof av === 'string') return sortDir * av.localeCompare(bv);
+    return sortDir * (av - bv);
+  });
+
+  document.getElementById('stats-line').textContent =
+    `Showing ${rows.length.toLocaleString()} of ${RAW.length.toLocaleString()} players`;
+
+  const tbody = document.getElementById('table-body');
+  const empty = document.getElementById('empty-msg');
+  if (rows.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  tbody.innerHTML = rows.map(r => {
+    const dis = disagreement(r);
+    const disBadge = dis >= 0.20 ? `<span class="dis-badge" title="Sources spread: ${Math.round(dis*100)}%">↕${Math.round(dis*100)}%</span>` : '';
+    const rowCls = dis >= 0.20 ? 'class="disagree"' : '';
+    return `
+      <tr ${rowCls}>
+        <td class="rank-col">${r.rank}<span class="pos-rank">${r.position}${r.pos_rank < 900 ? r.pos_rank : ''}</span></td>
+        <td class="name-col">${r.name}${disBadge}</td>
+        <td><span class="pos-badge ${posClass(r.position)}">${r.position || '—'}</span></td>
+        <td class="age-col">${r.age > 0 ? r.age.toFixed(1) : '—'}</td>
+        <td class="val-combined">${r.combined.toLocaleString()}</td>
+        ${fmtVal(r.ktc)}
+        ${fmtVal(r.dd)}
+        ${fmtVal(r.fc)}
+        ${srcDots(r)}
+      </tr>`;
+  }).join('');
+}
+
+// ── Sort ─────────────────────────────────────────────────────────────────────
+function sortBy(col) {
+  if (sortCol === col) {
+    sortDir = -sortDir;
+  } else {
+    sortCol = col;
+    // Numbers desc by default, strings asc
+    sortDir = ['name','position'].includes(col) ? 1 : -1;
+  }
+  // Update header classes
+  document.querySelectorAll('thead th').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+    if (th.dataset.col === col) {
+      th.classList.add(sortDir === 1 ? 'sort-asc' : 'sort-desc');
+    }
+  });
+  applyFilters();
+}
+
+// ── Position filter ───────────────────────────────────────────────────────────
+function setPos(btn, pos) {
+  activePos = pos;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+applyFilters();
+</script>
+</body>
+</html>
