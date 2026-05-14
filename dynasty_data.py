@@ -1,28 +1,21 @@
 """
-Fetches dynasty player values from three sources:
-  - KTC (KeepTradeCut)    — scraped from keeptradecut.com/dynasty-rankings
-  - Dynasty Daddy         — public API (dynastydaddy.gg)
-  - FantasyCalc           — public API (fantasycalc.com)
+Fetches dynasty player values from KeepTradeCut (KTC).
 
-Each source is normalized to a 0–9999 scale (top player = 9999), then averaged
-into a single combined score. Players missing from one source are averaged from
-the remaining two. All 3 sources are fetched in parallel.
+Values are scraped from keeptradecut.com/dynasty-rankings (Superflex format)
+and normalized to a 0–9999 scale (top player = 9999).
 
-Results are cached for 15 minutes to avoid hammering APIs on every request.
+Results are cached for 15 minutes to avoid hammering the site on every request.
 """
 import re
 import json
 import time
 import unicodedata
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
-# ── API endpoints ─────────────────────────────────────────────────────────────
+# ── API endpoint ──────────────────────────────────────────────────────────────
 
 KTC_URL = "https://keeptradecut.com/dynasty-rankings"
-DD_URL  = "https://api.dynastydaddy.gg/api/1.0/players/values?format=SF"
-FC_URL  = "https://api.fantasycalc.com/values/current?isDynasty=true&numQbs=2"
 
 _HEADERS = {
     "User-Agent": (
@@ -39,8 +32,8 @@ CACHE_TTL = 900  # seconds
 
 # ---------------------------------------------------------------------------
 # Draft pick values — Superflex format, March 2026
-# Picks are not available in Dynasty Daddy / FantasyCalc at pick-slot granularity,
-# so these remain KTC-calibrated and are intentionally not merged into the combined score.
+# Picks are not available at pick-slot granularity on KTC,
+# so these are manually calibrated from KTC pick value ranges.
 # ---------------------------------------------------------------------------
 
 PICK_VALUES = {
@@ -104,6 +97,33 @@ PICK_VALUES = {
     "Alexa's 2027 3rd":    {"ktc":  520, "note": "2027 3rd"},
     "Alexa's 2027 4th":    {"ktc":  200, "note": "2027 4th"},
     "Brad's 2027 3rd":     {"ktc":  510, "note": "2027 3rd (held by Alexa)"},
+    # 2027 later rounds — generic KTC estimates for missing teams
+    "Patrick's 2027 2nd":  {"ktc": 1100, "note": "2027 2nd"},
+    "Patrick's 2027 3rd":  {"ktc":  450, "note": "2027 3rd"},
+    "Patrick's 2027 4th":  {"ktc":  180, "note": "2027 4th"},
+    "Alex's 2027 2nd":     {"ktc": 1200, "note": "2027 2nd"},
+    "Alex's 2027 3rd":     {"ktc":  500, "note": "2027 3rd"},
+    "Alex's 2027 4th":     {"ktc":  200, "note": "2027 4th"},
+    "Lubin's 2027 2nd":    {"ktc": 1150, "note": "2027 2nd"},
+    "Lubin's 2027 3rd":    {"ktc":  470, "note": "2027 3rd"},
+    "Lubin's 2027 4th":    {"ktc":  190, "note": "2027 4th"},
+    "Schueler's 2027 2nd": {"ktc": 1150, "note": "2027 2nd"},
+    "Schueler's 2027 3rd": {"ktc":  470, "note": "2027 3rd"},
+    "Schueler's 2027 4th": {"ktc":  190, "note": "2027 4th"},
+    "Denton's 2027 2nd":   {"ktc": 1200, "note": "2027 2nd"},
+    "Denton's 2027 3rd":   {"ktc":  490, "note": "2027 3rd"},
+    "Denton's 2027 4th":   {"ktc":  200, "note": "2027 4th"},
+    "Berkowitz's 2027 2nd":{"ktc": 1200, "note": "2027 2nd"},
+    "Berkowitz's 2027 3rd":{"ktc":  490, "note": "2027 3rd"},
+    "Berkowitz's 2027 4th":{"ktc":  200, "note": "2027 4th"},
+    "Driscoll's 2027 2nd": {"ktc": 1250, "note": "2027 2nd"},
+    "Driscoll's 2027 3rd": {"ktc":  510, "note": "2027 3rd"},
+    "Driscoll's 2027 4th": {"ktc":  200, "note": "2027 4th"},
+    # Missing 2026 3rd/4th
+    "Jesse's 2026 3rd":    {"ktc":  750, "note": "2026 3rd (held by Alex)"},
+    "Jesse's 2026 4th":    {"ktc":  320, "note": "2026 4th (held by Alex)"},
+    "Driscoll's 2026 3rd": {"ktc":  680, "note": "2026 3rd"},
+    "Driscoll's 2026 4th": {"ktc":  290, "note": "2026 4th"},
 }
 
 
@@ -134,45 +154,38 @@ def _extract_js_array(html: str, var_name: str):
     return None
 
 
-def _normalize_source(raw: dict, value_key: str) -> dict:
-    """
-    Normalize player values within a source dict to the 0–9999 scale.
-    The player with the highest value in the source maps to 9999.
-    Returns a new dict with an added 'norm' key on each entry.
-    """
-    if not raw:
-        return {}
-    max_val = max((p.get(value_key, 0) for p in raw.values()), default=0)
-    if max_val == 0:
-        return raw
-    return {
-        k: {**v, "norm": round(v.get(value_key, 0) / max_val * 9999)}
-        for k, v in raw.items()
-    }
-
-
 # Public alias so other modules can normalize names for ranking lookups
 normalize_name = _normalize
 
-# ── Per-source fetchers (called in parallel) ──────────────────────────────────
+
+# ── KTC fetcher ───────────────────────────────────────────────────────────────
 
 def _fetch_ktc() -> dict:
     """
     Scrape KTC Superflex dynasty values from the JS variable on the page.
-    Returns {norm_name: {ktc, rank, pos_rank, age, position}}
+    Returns {norm_name: {name, combined, ktc, rank, pos_rank, age, position}}
     """
     r = requests.get(KTC_URL, headers=_HEADERS, timeout=15)
     r.raise_for_status()
     players = _extract_js_array(r.text, "playersArray")
     if not players:
         return {}
+
+    # Find max value for normalization to 0-9999
+    max_val = max((p.get("superflexValues", {}).get("value", 0) for p in players), default=1)
+    if max_val == 0:
+        max_val = 1
+
     result = {}
     for p in players:
         sv  = p.get("superflexValues", {})
+        raw_val = sv.get("value", 0)
         key = _normalize(p["playerName"])
+        norm_val = round(raw_val / max_val * 9999)
         result[key] = {
             "name":     p["playerName"],
-            "ktc":      sv.get("value", 0),
+            "combined": norm_val,
+            "ktc":      norm_val,
             "rank":     sv.get("rank", 999),
             "pos_rank": sv.get("positionalRank", 999),
             "age":      round(p.get("age", 0), 1),
@@ -181,76 +194,18 @@ def _fetch_ktc() -> dict:
     return result
 
 
-def _fetch_dynasty_daddy() -> dict:
-    """
-    Fetch Dynasty Daddy SF values from the public API.
-    Returns {norm_name: {dd, rank, pos_rank, age, position}}
-    """
-    r = requests.get(DD_URL, headers=_HEADERS, timeout=15)
-    r.raise_for_status()
-    data = r.json()
-    result     = {}
-    pos_counts = {}
-    for rank_idx, p in enumerate(data, 1):
-        name = p.get("playerName") or p.get("name", "")
-        if not name:
-            continue
-        pos = p.get("position", "")
-        pos_counts[pos] = pos_counts.get(pos, 0) + 1
-        key = _normalize(name)
-        result[key] = {
-            "name":     name,
-            "dd":       p.get("value", 0),
-            "rank":     rank_idx,
-            "pos_rank": pos_counts[pos],
-            "age":      float(p.get("age") or 0),
-            "position": pos,
-        }
-    return result
-
-
-def _fetch_fantasycalc() -> dict:
-    """
-    Fetch FantasyCalc 2QB/SF dynasty values from the public API.
-    Returns {norm_name: {fc, rank, pos_rank, age, position}}
-    """
-    r = requests.get(FC_URL, headers=_HEADERS, timeout=15)
-    r.raise_for_status()
-    data = r.json()
-    result = {}
-    for rank_idx, entry in enumerate(data, 1):
-        player = entry.get("player", {})
-        name   = player.get("name", "")
-        if not name:
-            continue
-        key = _normalize(name)
-        result[key] = {
-            "name":     name,
-            "fc":       entry.get("value", 0),
-            "rank":     rank_idx,
-            "pos_rank": entry.get("positionRank", 999),
-            "age":      float(player.get("age") or 0),
-            "position": player.get("position", ""),
-        }
-    return result
-
-
-# ── Combined rankings (main public entry point) ───────────────────────────────
+# ── Combined rankings (main public entry point) ──────────────────────────────
 
 def fetch_all_rankings() -> dict:
     """
-    Fetch KTC, Dynasty Daddy, and FantasyCalc in parallel.
-    Normalize each source to 0–9999, then average across available sources.
+    Fetch KTC dynasty values, normalize to 0-9999 scale.
 
     Returns dict keyed by normalized player name:
       {
-        "combined":      int,   # averaged normalized value (0-9999)
-        "ktc":           int|None,
-        "dd":            int|None,
-        "fc":            int|None,
-        "sources_count": int,   # how many sources contributed (1-3)
-        "rank":          int,   # overall rank by combined score
-        "pos_rank":      int,   # positional rank by combined score
+        "combined":      int,   # normalized value (0-9999)
+        "ktc":           int,   # same as combined (KTC-only)
+        "rank":          int,   # overall rank by value
+        "pos_rank":      int,   # positional rank by value
         "age":           float,
         "position":      str,
       }
@@ -260,86 +215,27 @@ def fetch_all_rankings() -> dict:
     if _cache["data"] and (now - _cache["ts"]) < CACHE_TTL:
         return _cache["data"]
 
-    # Fetch all three sources in parallel
-    source_fns = {
-        "ktc": _fetch_ktc,
-        "dd":  _fetch_dynasty_daddy,
-        "fc":  _fetch_fantasycalc,
-    }
-    raw: dict[str, dict] = {"ktc": {}, "dd": {}, "fc": {}}
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        futures = {pool.submit(fn): name for name, fn in source_fns.items()}
-        for future in as_completed(futures):
-            src = futures[future]
-            try:
-                raw[src] = future.result()
-            except Exception:
-                raw[src] = {}  # source unavailable — skip gracefully
+    result = _fetch_ktc()
 
-    # Normalize each source to 0-9999
-    ktc_norm = _normalize_source(raw["ktc"], "ktc")
-    dd_norm  = _normalize_source(raw["dd"],  "dd")
-    fc_norm  = _normalize_source(raw["fc"],  "fc")
-
-    # Merge all player keys from all sources
-    all_keys = set(ktc_norm) | set(dd_norm) | set(fc_norm)
-    combined: dict = {}
-
-    for key in all_keys:
-        vals  = []
-        ktc_v = dd_v = fc_v = None
-
-        if key in ktc_norm and ktc_norm[key].get("norm", 0) > 0:
-            ktc_v = ktc_norm[key]["norm"]
-            vals.append(ktc_v)
-        if key in dd_norm and dd_norm[key].get("norm", 0) > 0:
-            dd_v = dd_norm[key]["norm"]
-            vals.append(dd_v)
-        if key in fc_norm and fc_norm[key].get("norm", 0) > 0:
-            fc_v = fc_norm[key]["norm"]
-            vals.append(fc_v)
-
-        if not vals:
-            continue
-
-        # Prefer metadata from KTC, fall back to DD, then FC
-        meta = ktc_norm.get(key) or dd_norm.get(key) or fc_norm.get(key) or {}
-        combined[key] = {
-            "name":          meta.get("name", key.title()),
-            "combined":      round(sum(vals) / len(vals)),
-            "ktc":           ktc_v,
-            "dd":            dd_v,
-            "fc":            fc_v,
-            "sources_count": len(vals),
-            "rank":          999,
-            "pos_rank":      999,
-            "age":           meta.get("age", 0),
-            "position":      meta.get("position", ""),
-        }
-
-    # Rank all players by combined score
+    # Re-rank by combined score (should already be ranked but ensure consistency)
     sorted_players = sorted(
-        combined.items(), key=lambda x: x[1]["combined"], reverse=True
+        result.items(), key=lambda x: x[1]["combined"], reverse=True
     )
     pos_counters: dict[str, int] = {}
     for new_rank, (key, info) in enumerate(sorted_players, 1):
-        combined[key]["rank"] = new_rank
+        result[key]["rank"] = new_rank
         pos = info["position"]
         if pos:
             pos_counters[pos] = pos_counters.get(pos, 0) + 1
-            combined[key]["pos_rank"] = pos_counters[pos]
+            result[key]["pos_rank"] = pos_counters[pos]
 
-    _cache["data"] = combined
+    _cache["data"] = result
     _cache["ts"]   = now
-    return combined
+    return result
 
 
 def fetch_rankings() -> dict:
-    """
-    Backward-compatible wrapper — returns combined rankings.
-    The 'ktc' key in each entry reflects the normalized KTC component
-    (not the raw KTC value). Use 'combined' for trade math.
-    """
+    """Backward-compatible wrapper — returns KTC rankings."""
     return fetch_all_rankings()
 
 
@@ -347,8 +243,7 @@ def fetch_rankings() -> dict:
 
 def annotate_player(player: dict, rankings: dict) -> str:
     """
-    Returns 'Name (VAL:5890 #32 QB | age 26 · KTC/DD/FC)' with source indicators,
-    or 'Name (POS)' if the player isn't in any ranking source.
+    Returns 'Name (VAL:5890 #32 QB | age 26)' or 'Name (POS)' if unranked.
     """
     name = player["name"]
     pos  = player["position"]
@@ -358,22 +253,15 @@ def annotate_player(player: dict, rankings: dict) -> str:
     if not info:
         return f"{name} ({pos})"
 
-    val = info.get("combined") or info.get("ktc") or 0
+    val = info.get("combined", 0)
     if not val:
         return f"{name} ({pos})"
 
     age_str = f" | age {info['age']:.0f}" if info.get("age") else ""
 
-    # Source indicator: shows which of the 3 sources contributed
-    src_parts = []
-    if info.get("ktc"):  src_parts.append("KTC")
-    if info.get("dd"):   src_parts.append("DD")
-    if info.get("fc"):   src_parts.append("FC")
-    src_str = f" [{'/'.join(src_parts)}]" if len(src_parts) < 3 else ""
-
     return (
         f"{name} (VAL:{val} #{info['rank']} {info['position']}"
-        f"{age_str}{src_str})"
+        f"{age_str})"
     )
 
 
@@ -388,8 +276,7 @@ def enrich_pick_label(pick: str) -> str:
 
 def build_rankings_summary(rankings: dict) -> str:
     """
-    Top-40 combined dynasty values to inject into the Claude prompt.
-    Shows combined score + per-source breakdown for transparency.
+    Top-40 dynasty values to inject into the Claude prompt.
     """
     if not rankings:
         return "(Rankings unavailable — falling back to positional reasoning)"
@@ -400,21 +287,13 @@ def build_rankings_summary(rankings: dict) -> str:
         reverse=True
     )[:40]
 
-    # Detect which sources actually loaded
-    has_ktc = any(v.get("ktc") for _, v in top)
-    has_dd  = any(v.get("dd")  for _, v in top)
-    has_fc  = any(v.get("fc")  for _, v in top)
-    sources = [s for s, ok in [("KTC", has_ktc), ("DynastyDaddy", has_dd), ("FantasyCalc", has_fc)] if ok]
-    header  = f"TOP 40 COMBINED DYNASTY VALUES ({' + '.join(sources)}, normalized 0-9999):"
+    header = "TOP 40 DYNASTY VALUES (KTC Superflex, normalized 0-9999):"
 
     lines = [header]
     for name_key, info in top:
         age_str = f", age {info['age']:.0f}" if info.get("age") else ""
-        ktc_str = f" KTC:{info['ktc']}"        if info.get("ktc") else " KTC:—"
-        dd_str  = f" DD:{info['dd']}"          if info.get("dd")  else " DD:—"
-        fc_str  = f" FC:{info['fc']}"          if info.get("fc")  else " FC:—"
         lines.append(
             f"  VAL:{info['combined']:>5}  #{info['rank']:>3} {info['position']:<3}  "
-            f"{name_key.title()}{age_str} |{ktc_str}{dd_str}{fc_str}"
+            f"{name_key.title()}{age_str}"
         )
     return "\n".join(lines)

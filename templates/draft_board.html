@@ -46,16 +46,21 @@
       gap: 16px;
     }
     .header-left { display: flex; align-items: center; gap: 16px; }
-    .back-link {
+    .db-nav { display: flex; gap: 6px; flex-wrap: wrap; }
+    .db-nav-link {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 14px;
       color: var(--muted);
-      text-decoration: none;
       font-size: 0.82rem;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      transition: color .15s;
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: all .15s;
     }
-    .back-link:hover { color: var(--text); }
+    .db-nav-link:hover { color: var(--text); border-color: var(--border-hi); }
+    .db-nav-link.active { background: var(--gold-dim); border-color: var(--gold-bdr); color: var(--gold); }
     .header h1 {
       font-size: 1.1rem;
       font-weight: 700;
@@ -93,17 +98,30 @@
     }
     .pick-slots {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       flex-wrap: wrap;
     }
+    .round-label {
+      width: 100%;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-top: 10px;
+      margin-bottom: 4px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--border);
+    }
+    .round-label:first-child { margin-top: 0; }
     .pick-slot {
       flex: 1;
-      min-width: 80px;
-      max-width: 120px;
+      min-width: 75px;
+      max-width: 110px;
       background: var(--bg);
       border: 1.5px solid var(--border);
       border-radius: 8px;
-      padding: 8px 10px;
+      padding: 6px 8px;
       text-align: center;
       transition: border-color .2s, background .2s;
     }
@@ -122,18 +140,17 @@
     }
     .pick-slot.current-pick.jesse-pick { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(227,179,65,.3); }
     .slot-num {
-      font-size: 0.65rem;
+      font-size: 0.6rem;
       color: var(--muted);
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .06em;
+      letter-spacing: .04em;
     }
     .jesse-pick .slot-num { color: var(--gold); }
     .slot-player {
-      font-size: 0.78rem;
+      font-size: 0.72rem;
       font-weight: 600;
-      margin-top: 4px;
-      min-height: 18px;
+      margin-top: 2px;
+      min-height: 16px;
       line-height: 1.3;
       color: var(--text);
       white-space: nowrap;
@@ -142,13 +159,141 @@
     }
     .jesse-pick .slot-player.filled { color: var(--gold); }
     .slot-owner {
-      font-size: 0.65rem;
+      font-size: 0.6rem;
       color: var(--muted);
-      margin-top: 2px;
+      margin-top: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .slot-via {
+      font-size: 0.52rem;
+      color: var(--muted);
+      font-style: italic;
+      opacity: .7;
+    }
+
+    /* ── Timer ──────────────────────────────────────── */
+    .timer-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      padding: 10px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .timer-display {
+      font-size: 1.6rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      min-width: 60px;
+      text-align: center;
+    }
+    .timer-display.warning { color: var(--gold); }
+    .timer-display.danger { color: var(--red); animation: timer-pulse .5s infinite; }
+    @keyframes timer-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .5; }
+    }
+    .timer-progress {
+      flex: 1;
+      height: 6px;
+      background: rgba(255,255,255,.06);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .timer-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--green);
+      transition: width .3s, background .3s;
+    }
+    .timer-fill.warning { background: var(--gold); }
+    .timer-fill.danger { background: var(--red); }
+    .timer-btns { display: flex; gap: 6px; }
+    .timer-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      color: var(--text);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .timer-btn:hover { border-color: var(--border-hi); }
+    .timer-btn.active-timer { background: var(--green-dim); border-color: var(--green-bdr); color: var(--green); }
+
+    /* ── Action bar (above draft board) ──────────────── */
+    .action-bar {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .action-bar .pick-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .action-bar .pick-display {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--text);
+      min-width: 50px;
+      text-align: center;
+    }
+    .action-bar .pick-display.jesse-turn { color: var(--gold); }
+    .action-bar .your-pick-banner {
+      display: none;
+      background: var(--gold-dim);
+      border: 1px solid var(--gold-bdr);
+      border-radius: 8px;
+      padding: 6px 14px;
+      text-align: center;
+    }
+    .action-bar .your-pick-banner.active { display: flex; align-items: center; gap: 10px; }
+    .action-bar .banner-title {
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: var(--gold);
+    }
+    .action-bar .banner-sub {
+      font-size: 0.72rem;
+      color: rgba(227,179,65,.7);
+    }
+    .action-bar .btn-claude {
+      margin-top: 0;
+      width: auto;
+      padding: 7px 14px;
+      font-size: 0.82rem;
+    }
+    .action-bar .trade-signal {
+      flex: 1;
+      min-width: 200px;
+      margin-top: 0;
+    }
+    .action-bar .claude-rec {
+      flex: 1;
+      min-width: 250px;
+      margin-top: 0;
+    }
+    .action-bar .pick-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--muted);
+      margin-right: -6px;
     }
 
     /* ── Main layout ──────────────────────────────────── */
-    .main { display: flex; gap: 0; height: calc(100vh - 200px); min-height: 500px; }
+    .main { display: flex; gap: 0; height: calc(100vh - 260px); min-height: 500px; }
 
     /* ── Player pool ──────────────────────────────────── */
     .player-pool {
@@ -234,10 +379,34 @@
     .pos-WR { background: rgba(88,166,255,.2); color: var(--blue); }
     .pos-TE { background: rgba(227,179,65,.2); color: var(--gold); }
 
+    .nfl-cell { color: var(--text); font-size: 0.82rem; font-weight: 600; }
     .college-cell { color: var(--muted); font-size: 0.8rem; }
     .ktc-cell { font-weight: 700; font-size: 0.88rem; color: var(--text); }
     .age-cell { color: var(--muted); font-size: 0.8rem; text-align: center; }
     .notes-cell { color: var(--muted); font-size: 0.78rem; max-width: 220px; }
+    .trade-signal {
+      background: var(--gold-dim);
+      border: 1px solid var(--gold-bdr);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.75rem;
+      color: var(--gold);
+      line-height: 1.4;
+      margin-top: 6px;
+    }
+    .trade-signal .signal-title { font-weight: 700; margin-bottom: 2px; }
+    .trade-signal .signal-detail { color: var(--muted); font-size: 0.7rem; }
+
+    .impact-inline {
+      display: flex;
+      gap: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      margin-top: 3px;
+      align-items: center;
+    }
+    .impact-inline .impact-rank-num { font-weight: 700; }
+    .impact-inline .impact-arrow { font-size: 0.9rem; }
 
     .drafted-by {
       font-size: 0.75rem;
@@ -300,6 +469,7 @@
     }
     .team-opt:hover { background: rgba(255,255,255,.07); }
     .team-opt.jesse-opt { color: var(--green); font-weight: 600; }
+    .team-opt.expected-opt { color: var(--gold); border-color: var(--gold-bdr); background: var(--gold-dim); }
 
     /* ── Right panel ──────────────────────────────────── */
     .right-panel {
@@ -656,63 +826,87 @@
       flex-shrink: 0;
     }
     .trade-undo-btn:hover { border-color: var(--red); color: var(--red); }
+
+    /* ── Draft Impact ──────────────────────────────── */
+    .impact-team-row {
+      display: flex;
+      align-items: center;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(48,54,61,.4);
+      font-size: .82rem;
+    }
+    .impact-team-row:last-child { border-bottom: none; }
+    .impact-team-row.is-jesse { color: var(--gold); font-weight: 700; }
+    .impact-rank {
+      min-width: 24px;
+      text-align: center;
+      font-weight: 800;
+      font-size: .9rem;
+    }
+    .impact-rank.rank-1 { color: var(--gold); }
+    .impact-rank.rank-2 { color: #c0c0c0; }
+    .impact-rank.rank-3 { color: #cd7f32; }
+    .impact-name { flex: 1; margin-left: 8px; }
+    .impact-score {
+      min-width: 40px;
+      text-align: right;
+      margin-right: 8px;
+      font-weight: 600;
+    }
+    .impact-delta {
+      min-width: 40px;
+      text-align: center;
+      font-weight: 700;
+      font-size: .78rem;
+    }
+    .impact-delta.up { color: var(--green); }
+    .impact-delta.down { color: var(--red); }
+    .impact-delta.flat { color: var(--muted); }
+    .impact-loading {
+      text-align: center;
+      padding: 12px;
+      color: var(--muted);
+      font-size: .8rem;
+    }
   </style>
 </head>
 <body>
 
 <header class="header">
   <div class="header-left">
-    <a href="/" class="back-link">← Trade Analyzer</a>
     <div>
       <h1>2026 Dynasty Draft Board</h1>
-      <div class="header-sub">Pre-draft KTC estimates · Superflex · Round 1 tracker</div>
+      <div class="header-sub">Post-draft KTC values · NFL landing spots · Superflex · Round 1 tracker</div>
     </div>
   </div>
-  <div style="display:flex;gap:8px;align-items:center">
-    <a href="/advisor" style="
-      background: linear-gradient(135deg, #6e40c9, #9765f0);
-      border: 1px solid rgba(188,140,255,.4);
-      border-radius: 6px;
-      padding: 6px 14px;
-      color: #fff;
-      font-size: 0.82rem;
-      font-weight: 600;
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      white-space: nowrap;
-      transition: all .2s;
-    " onmouseover="this.style.boxShadow='0 4px 12px rgba(150,100,240,.4)'"
-       onmouseout="this.style.boxShadow='none'">
-      🤖 Advisor
-    </a>
-    <a href="/rankings" style="
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      padding: 6px 14px;
-      color: #8b949e;
-      font-size: 0.82rem;
-      font-weight: 600;
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      white-space: nowrap;
-      transition: all .2s;
-    " onmouseover="this.style.color='#e6edf3';this.style.borderColor='#484f58'"
-       onmouseout="this.style.color='#8b949e';this.style.borderColor='#30363d'">
-      📊 Rankings
-    </a>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <nav class="db-nav">
+      <a href="/" class="db-nav-link">Trade Analyzer</a>
+      <a href="/power-rankings" class="db-nav-link">Power Rankings</a>
+      <a href="/draft-board" class="db-nav-link active">Draft Board</a>
+      <a href="/advisor" class="db-nav-link">Advisor</a>
+      <a href="/rankings" class="db-nav-link">Rankings</a>
+      <a href="/buy-sell" class="db-nav-link">Buy/Sell</a>
+    </nav>
+    <button class="btn-reset" id="undo-last-btn" onclick="undoLastPick()" style="border-color:var(--gold-bdr);color:var(--gold)">Undo Last Pick</button>
     <button class="btn-reset" onclick="confirmReset()">Reset Draft</button>
   </div>
 </header>
 
 <!-- Round 1 Pick Tracker -->
 <div class="tracker-wrap">
-  <div class="tracker-label">Round 1 — Pick Tracker</div>
+  <div class="tracker-label">Draft Tracker — 4 Rounds · 40 Picks</div>
   <div class="pick-slots" id="pick-slots"></div>
+  <div class="timer-bar" id="timer-bar">
+    <div class="timer-display" id="timer-display">3:00</div>
+    <div class="timer-progress">
+      <div class="timer-fill" id="timer-fill" style="width:100%"></div>
+    </div>
+    <div class="timer-btns">
+      <button class="timer-btn" id="timer-start-btn" onclick="toggleTimer()">Start</button>
+      <button class="timer-btn" onclick="resetTimer()">Reset</button>
+    </div>
+  </div>
 </div>
 
 <!-- In-Draft Trades Panel -->
@@ -781,6 +975,32 @@
   </div>
 </div>
 
+<!-- Action bar — pick controls, trade signal, ask Claude -->
+<div class="action-bar">
+  <span class="pick-label">Pick</span>
+  <div class="pick-control">
+    <button class="pick-nav" id="btn-prev" onclick="changePick(-1)">&#8249;</button>
+    <div class="pick-display" id="pick-display">1</div>
+    <button class="pick-nav" id="btn-next" onclick="changePick(1)">&#8250;</button>
+  </div>
+  <div class="your-pick-banner" id="your-pick-banner">
+    <div class="banner-title" id="banner-title">YOUR PICK</div>
+    <div class="banner-sub" id="banner-sub">Pick 1.01 · Jesse</div>
+  </div>
+  <button class="btn-claude" id="btn-claude" onclick="askClaude()" style="display:none">
+    Ask Claude for Pick
+  </button>
+  <button class="btn-claude" id="btn-claude-trade" onclick="askClaudeTrade()" style="display:none;background:linear-gradient(135deg,#1a6b3c,#238636);border-color:#238636">
+    Ask Claude for Trade
+  </button>
+  <div class="trade-signal" id="trade-signal" style="display:none"></div>
+  <div class="claude-rec" id="claude-rec"></div>
+  <button class="btn-claude" id="btn-sim-draft" onclick="simulateDraft()"
+    style="margin-left:auto;background:linear-gradient(135deg,#553c9a,#6b46c1);border-color:#6b46c1">
+    &#9654; Simulate Draft
+  </button>
+</div>
+
 <!-- Main content -->
 <div class="main">
 
@@ -800,8 +1020,9 @@
         <tr>
           <th>#</th>
           <th>Player</th>
+          <th title="NFL landing spot">NFL</th>
           <th>College</th>
-          <th title="Combined: KTC + Dynasty Daddy + FantasyCalc, normalized">Combined Val</th>
+          <th title="KTC Superflex dynasty value">Value</th>
           <th class="th-center">Age</th>
           <th>Notes</th>
           <th>Action</th>
@@ -814,27 +1035,9 @@
   <!-- Right: Control panel -->
   <div class="right-panel">
 
-    <!-- Current pick -->
-    <div class="panel-section">
-      <div class="section-label">Current Pick</div>
-      <div class="pick-control">
-        <button class="pick-nav" id="btn-prev" onclick="changePick(-1)">‹</button>
-        <div class="pick-display" id="pick-display">1</div>
-        <button class="pick-nav" id="btn-next" onclick="changePick(1)">›</button>
-      </div>
-      <div class="your-pick-banner" id="your-pick-banner">
-        <div class="banner-title" id="banner-title">YOUR PICK</div>
-        <div class="banner-sub" id="banner-sub">Pick 1.01 · Jesse</div>
-      </div>
-      <button class="btn-claude" id="btn-claude" onclick="askClaude()" style="display:none">
-        🤖 Ask Claude for Pick
-      </button>
-      <div class="claude-rec" id="claude-rec"></div>
-    </div>
-
     <!-- My picks -->
     <div class="panel-section">
-      <div class="section-label">My Picks (Round 1)</div>
+      <div class="section-label">My Picks</div>
       <div id="my-picks-list"></div>
     </div>
 
@@ -854,6 +1057,27 @@
       <div id="draft-log"></div>
     </div>
 
+    <!-- Power Rankings Impact -->
+    <div class="panel-section">
+      <div class="section-label" style="display:flex;justify-content:space-between;align-items:center">
+        <span id="impact-panel-title">Dynasty Impact</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div id="impact-tabs" style="display:none;font-size:.68rem;border:1px solid var(--border);border-radius:4px;overflow:hidden">
+            <button onclick="switchImpactTab('season')" id="impact-tab-season"
+              style="padding:2px 8px;background:transparent;color:var(--muted);border:none;cursor:pointer;font-size:.68rem;transition:all .15s">Season</button>
+            <button onclick="switchImpactTab('dynasty')" id="impact-tab-dynasty"
+              style="padding:2px 8px;background:var(--accent);color:#fff;border:none;cursor:pointer;font-size:.68rem;transition:all .15s">Dynasty</button>
+          </div>
+          <button class="btn-claude" id="btn-impact" onclick="fetchDraftImpact()" style="font-size:.72rem;padding:4px 10px;display:none">
+            Refresh
+          </button>
+        </div>
+      </div>
+      <div id="draft-impact" style="font-size:.82rem">
+        <div style="color:var(--muted);font-size:.8rem;padding:8px 0">Make picks to see how power rankings shift across the league.</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -861,11 +1085,84 @@
   // ── Data ────────────────────────────────────────────
   const ROOKIES = {{ rookies | tojson }};
   const OWNERS  = {{ owners | tojson }};
-  const JESSE_PICKS = [1, 3, 10]; // pick numbers (1-indexed, round 1)
-  const TOTAL_PICKS = 10;
-  const JESSE_PICK_LABELS  = { 1: "1.01 (own)", 3: "1.03 (Alex's)", 10: "1.10 (Patrick's)" };
-  const JESSE_PICK_KEY_MAP = { 1: "1.01", 3: "1.03", 10: "1.10" }; // maps pick# → picksHeld key
+  const TEAM_POS_COUNTS = {{ team_pos_counts | tojson }};
   const STATE_KEY = 'dynasty_draft_2026';
+
+  // Full 4-round draft order: pick number (1-40), owner, via (trade source)
+  const DRAFT_ORDER = [
+    // Round 1
+    { pick: 1,  slot: "1.01",  owner: "Jesse",    via: null },
+    { pick: 2,  slot: "1.02",  owner: "Brad",     via: null },
+    { pick: 3,  slot: "1.03",  owner: "Jesse",    via: "Alex" },
+    { pick: 4,  slot: "1.04",  owner: "Driscoll", via: null },
+    { pick: 5,  slot: "1.05",  owner: "Jake",     via: null },
+    { pick: 6,  slot: "1.06",  owner: "Lubin",    via: null },
+    { pick: 7,  slot: "1.07",  owner: "Alex",     via: "Alexa" },
+    { pick: 8,  slot: "1.08",  owner: "Denton",   via: null },
+    { pick: 9,  slot: "1.09",  owner: "Schueler", via: null },
+    { pick: 10, slot: "1.10",  owner: "Jesse",    via: "Patrick" },
+    // Round 2
+    { pick: 11, slot: "2.01",  owner: "Patrick",  via: "Jesse" },
+    { pick: 12, slot: "2.02",  owner: "Brad",     via: null },
+    { pick: 13, slot: "2.03",  owner: "Driscoll", via: "Alex" },
+    { pick: 14, slot: "2.04",  owner: "Jake",     via: "Driscoll" },
+    { pick: 15, slot: "2.05",  owner: "Jake",     via: null },
+    { pick: 16, slot: "2.06",  owner: "Lubin",    via: null },
+    { pick: 17, slot: "2.07",  owner: "Alexa",    via: null },
+    { pick: 18, slot: "2.08",  owner: "Denton",   via: null },
+    { pick: 19, slot: "2.09",  owner: "Jake",     via: "Schueler" },
+    { pick: 20, slot: "2.10",  owner: "Alex",     via: "Patrick" },
+    // Round 3
+    { pick: 21, slot: "3.01",  owner: "Alex",     via: "Jesse" },
+    { pick: 22, slot: "3.02",  owner: "Brad",     via: null },
+    { pick: 23, slot: "3.03",  owner: "Patrick",  via: "Alex" },
+    { pick: 24, slot: "3.04",  owner: "Driscoll", via: null },
+    { pick: 25, slot: "3.05",  owner: "Jake",     via: null },
+    { pick: 26, slot: "3.06",  owner: "Lubin",    via: null },
+    { pick: 27, slot: "3.07",  owner: "Brad",     via: "Alexa" },
+    { pick: 28, slot: "3.08",  owner: "Denton",   via: null },
+    { pick: 29, slot: "3.09",  owner: "Schueler", via: null },
+    { pick: 30, slot: "3.10",  owner: "Patrick",  via: null },
+    // Round 4
+    { pick: 31, slot: "4.01",  owner: "Alexa",    via: "Alex, via Jesse" },
+    { pick: 32, slot: "4.02",  owner: "Brad",     via: null },
+    { pick: 33, slot: "4.03",  owner: "Alex",     via: null },
+    { pick: 34, slot: "4.04",  owner: "Driscoll", via: null },
+    { pick: 35, slot: "4.05",  owner: "Jake",     via: null },
+    { pick: 36, slot: "4.06",  owner: "Lubin",    via: null },
+    { pick: 37, slot: "4.07",  owner: "Alexa",    via: null },
+    { pick: 38, slot: "4.08",  owner: "Denton",   via: null },
+    { pick: 39, slot: "4.09",  owner: "Schueler", via: null },
+    { pick: 40, slot: "4.10",  owner: "Alex",     via: "Patrick" },
+  ];
+
+  const TOTAL_PICKS = 40;
+  const JESSE_PICKS = DRAFT_ORDER.filter(d => d.owner === 'Jesse').map(d => d.pick); // [1, 3, 10]
+  const JESSE_PICK_LABELS = {};
+  const JESSE_PICK_KEY_MAP = {};
+  JESSE_PICKS.forEach(p => {
+    const d = DRAFT_ORDER.find(x => x.pick === p);
+    JESSE_PICK_LABELS[p] = d.via ? `${d.slot} (via ${d.via})` : `${d.slot} (own)`;
+    JESSE_PICK_KEY_MAP[p] = d.slot;
+  });
+
+  function getDraftSlot(pickNum) { return DRAFT_ORDER.find(d => d.pick === pickNum); }
+  function getRound(pickNum) { return Math.ceil(pickNum / 10); }
+
+  // ESPN owner names → draft board display names
+  const OWNER_DISPLAY = {
+    "Gz": "Jesse", "Gztz": "Jesse",
+    "Patrick Stevenson": "Patrick", "Alexa Feldman": "Alexa",
+    "Alex Wall": "Alex", "Bradley Komar": "Brad",
+    "Nathaniel Lubin": "Lubin", "John Schueler": "Schueler",
+    "Grant Denton": "Denton", "Sarah Driscoll": "Driscoll",
+    "Jacob Berkowitz": "Jake",
+  };
+  function displayOwner(espnName) {
+    if (!espnName) return '?';
+    const first = espnName.split(' ')[0];
+    return OWNER_DISPLAY[espnName] || OWNER_DISPLAY[first] || first;
+  }
 
   // ── State ────────────────────────────────────────────
   let state = {
@@ -875,6 +1172,8 @@
   };
   let activeFilter = 'ALL';
   let openPickerRow = null; // currently open team picker
+  let draftImpacts = {};    // { "Player Name": { dynasty_score, dynasty_rank, season_score, season_rank } }
+  let impactFetchPending = false;
 
   // ── Persistence ──────────────────────────────────────
   function applyStateDefaults() {
@@ -968,6 +1267,90 @@
     saveState();
     closeAllPickers();
     hideClaude();
+    if (typeof resetTimer === 'function') resetTimer();
+    renderAll();
+  }
+
+  // ── Simulate Draft ──────────────────────────────────────
+  // Ideal roster targets for a 10-team Superflex dynasty league
+  const POS_TARGETS = { QB: 3, RB: 5, WR: 6, TE: 2 };
+
+  function simulateDraft() {
+    if (!confirm('Simulate remaining picks based on team need + BPA?')) return;
+
+    // Build live position counts per owner (base roster + already-drafted picks)
+    const posCounts = {};
+    for (const [owner, counts] of Object.entries(TEAM_POS_COUNTS)) {
+      posCounts[owner] = { ...counts };
+    }
+    // Add already-drafted players to counts
+    for (const entry of state.draftLog) {
+      const owner = entry.teamOwner;
+      const pos = entry.pos;
+      if (posCounts[owner] && pos in posCounts[owner]) {
+        posCounts[owner][pos]++;
+      }
+    }
+
+    // Fill remaining picks
+    let pick = state.currentPick;
+    while (pick <= TOTAL_PICKS) {
+      const slot = getDraftSlot(pick);
+      if (!slot) { pick++; continue; }
+
+      // Skip if this pick was already drafted
+      if (state.draftLog.some(e => e.pick === pick)) { pick++; continue; }
+
+      const owner = slot.owner;
+      const avail = ROOKIES.filter(r => !state.draftedNames.includes(r.name));
+      if (avail.length === 0) break;
+
+      // Compute need scores for this owner
+      const counts = posCounts[owner] || { QB: 2, RB: 3, WR: 4, TE: 1 };
+      const needScores = {};
+      for (const pos of ['QB', 'RB', 'WR', 'TE']) {
+        const deficit = Math.max(0, POS_TARGETS[pos] - (counts[pos] || 0));
+        needScores[pos] = deficit;
+      }
+      const maxNeed = Math.max(...Object.values(needScores), 1);
+
+      // Score each available player: BPA value + need bonus
+      // Need bonus: up to 30% of their value based on positional deficit
+      let bestPlayer = null;
+      let bestScore = -1;
+      for (const r of avail) {
+        const need = needScores[r.pos] || 0;
+        const needBonus = (need / maxNeed) * 0.30 * r.ktc_est;
+        const score = r.ktc_est + needBonus;
+        if (score > bestScore) {
+          bestScore = score;
+          bestPlayer = r;
+        }
+      }
+
+      if (!bestPlayer) break;
+
+      // Draft the player
+      const isJesse = owner === 'Jesse';
+      state.draftLog.push({
+        pick,
+        playerName: bestPlayer.name,
+        pos: bestPlayer.pos,
+        ktcEst: bestPlayer.ktc_est,
+        teamOwner: owner,
+        isJesse,
+      });
+      state.draftedNames.push(bestPlayer.name);
+
+      // Update position counts
+      if (!posCounts[owner]) posCounts[owner] = { QB: 0, RB: 0, WR: 0, TE: 0 };
+      posCounts[owner][bestPlayer.pos] = (posCounts[owner][bestPlayer.pos] || 0) + 1;
+
+      pick++;
+    }
+
+    state.currentPick = Math.min(pick, TOTAL_PICKS);
+    saveState();
     renderAll();
   }
 
@@ -999,12 +1382,28 @@
     picker.classList.add('open');
     openPickerRow = picker;
 
-    picker.innerHTML = `<div class="team-picker-label">Draft for:</div>`;
-    const allOwners = ['Jesse', ...OWNERS.filter(o => o !== 'Jesse')];
+    // Determine who should pick based on draft order
+    const draftSlot = getDraftSlot(state.currentPick);
+    const expectedOwner = draftSlot ? draftSlot.owner : null;
+
+    picker.innerHTML = `<div class="team-picker-label">Draft for:${draftSlot ? ` <span style="color:var(--gold)">(${draftSlot.slot} — ${expectedOwner})</span>` : ''}</div>`;
+
+    // Build owner list from draft order (consistent names)
+    const draftOwners = [...new Set(DRAFT_ORDER.map(d => d.owner))];
+    const allOwners = [];
+    if (expectedOwner) allOwners.push(expectedOwner);
+    if (expectedOwner !== 'Jesse') allOwners.push('Jesse');
+    draftOwners.filter(o => o !== 'Jesse' && o !== expectedOwner).forEach(o => allOwners.push(o));
+
     allOwners.forEach(owner => {
+      const isExpected = owner === expectedOwner;
+      const isJesseOpt = owner === 'Jesse';
       const b = document.createElement('button');
-      b.className = 'team-opt' + (owner === 'Jesse' ? ' jesse-opt' : '');
+      b.className = 'team-opt' +
+        (isJesseOpt ? ' jesse-opt' : '') +
+        (isExpected && !isJesseOpt ? ' expected-opt' : '');
       b.textContent = owner;
+      if (isExpected) b.style.fontWeight = '800';
       b.onclick = (e) => { e.stopPropagation(); draftPlayer(playerName, owner); };
       picker.appendChild(b);
     });
@@ -1077,11 +1476,71 @@
     }
   }
 
+  async function askClaudeTrade() {
+    // Re-use the same askClaude flow but focused on trade advice
+    const btn = document.getElementById('btn-claude-trade');
+    const recDiv = document.getElementById('claude-rec');
+    btn.disabled = true;
+    btn.textContent = 'Asking Claude...';
+    recDiv.classList.remove('active');
+
+    const avail = availablePlayers().map(p => ({
+      name: p.name, pos: p.pos, ktc_est: p.ktc_est
+    }));
+
+    try {
+      const res = await fetch('/recommend-pick', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          team_id: 8,
+          pick_number: state.currentPick,
+          available_players: avail,
+          focus: 'trade',
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+
+      const altsHtml = (data.alternatives || []).map(a =>
+        `<div class="rec-alt-item">- ${a}</div>`
+      ).join('');
+
+      recDiv.innerHTML = `
+        <div class="rec-pick">${data.pick || '—'}</div>
+        <div class="rec-reasoning">${data.reasoning || ''}</div>
+        ${altsHtml ? `<div class="rec-alts"><div class="rec-alts-label">Alternatives</div>${altsHtml}</div>` : ''}
+      `;
+      recDiv.classList.add('active');
+    } catch (err) {
+      recDiv.innerHTML = `<div style="color:var(--red);font-size:.8rem">Error: ${err.message}</div>`;
+      recDiv.classList.add('active');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Ask Claude for Trade';
+    }
+  }
+
   // ── Render functions ──────────────────────────────────
   function renderPickTracker() {
     const container = document.getElementById('pick-slots');
     container.innerHTML = '';
+    let currentRound = 0;
+
     for (let i = 1; i <= TOTAL_PICKS; i++) {
+      const draftSlot = getDraftSlot(i);
+      const round = getRound(i);
+
+      // Add round label
+      if (round !== currentRound) {
+        currentRound = round;
+        const label = document.createElement('div');
+        label.className = 'round-label';
+        label.textContent = `Round ${round}`;
+        container.appendChild(label);
+      }
+
       const logEntry = state.draftLog.find(e => e.pick === i);
       const isJesse  = isJessePick(i);
       const isCurrent = i === state.currentPick;
@@ -1097,22 +1556,32 @@
         (isCurrent ? ' current-pick' : '') +
         (isTraded  ? ' traded-pick' : '');
 
+      const ownerName = draftSlot ? draftSlot.owner : `Pick ${i}`;
+      const viaText = draftSlot && draftSlot.via ? `via ${draftSlot.via}` : '';
+      const slotLabel = draftSlot ? draftSlot.slot : `${round}.${((i-1)%10)+1}`;
+
       if (isTraded) {
         const tradeEntry = (state.tradeLog || []).find(e => e.gave === pickKey);
         const toText = tradeEntry ? `to ${tradeEntry.to}` : 'traded away';
         div.innerHTML = `
-          <div class="slot-num">Pick ${i}</div>
+          <div class="slot-num">${slotLabel}</div>
           <div class="slot-player traded-label">↗ Traded</div>
           <div class="slot-owner">${toText}</div>
         `;
-      } else {
-        const playerText  = logEntry ? logEntry.playerName.split(' ').pop() : '?';
-        const ownerText   = logEntry ? logEntry.teamOwner : (isJesse ? 'Jesse' : `Pick ${i}`);
-        const playerClass = (logEntry && isJesse) ? 'slot-player filled' : 'slot-player';
+      } else if (logEntry) {
+        const playerText = logEntry.playerName.split(' ').pop();
+        const playerClass = logEntry.isJesse ? 'slot-player filled' : 'slot-player';
         div.innerHTML = `
-          <div class="slot-num">${isJesse ? '★ ' : ''}Pick ${i}</div>
+          <div class="slot-num">${isJesse ? '★ ' : ''}${slotLabel}</div>
           <div class="${playerClass}">${playerText}</div>
-          <div class="slot-owner">${ownerText}</div>
+          <div class="slot-owner">${logEntry.teamOwner}</div>
+        `;
+      } else {
+        div.innerHTML = `
+          <div class="slot-num">${isJesse ? '★ ' : ''}${slotLabel}</div>
+          <div class="slot-player" style="color:var(--muted)">—</div>
+          <div class="slot-owner">${ownerName}</div>
+          ${viaText ? `<div class="slot-via">${viaText}</div>` : ''}
         `;
       }
       container.appendChild(div);
@@ -1123,18 +1592,24 @@
     const disp = document.getElementById('pick-display');
     const banner = document.getElementById('your-pick-banner');
     const btnClaude = document.getElementById('btn-claude');
+    const btnClaudeTrade = document.getElementById('btn-claude-trade');
     const prevBtn = document.getElementById('btn-prev');
     const nextBtn = document.getElementById('btn-next');
     const pick    = state.currentPick;
     const isJesse = isJessePick(pick);
     const alreadyDrafted = state.draftLog.find(e => e.pick === pick);
+    const draftSlot = getDraftSlot(pick);
 
     // Check if Jesse traded this pick away
     const pickKey  = JESSE_PICK_KEY_MAP[pick];
     const isTraded = isJesse && pickKey && state.picksHeld &&
                      state.picksHeld[pickKey] === false;
 
-    disp.textContent = `Pick ${pick}`;
+    const slotLabel = draftSlot ? draftSlot.slot : `Pick ${pick}`;
+    const ownerLabel = draftSlot ? draftSlot.owner : '';
+    const viaLabel = draftSlot && draftSlot.via ? ` (via ${draftSlot.via})` : '';
+
+    disp.textContent = slotLabel;
     disp.className = 'pick-display' + (isJesse && !isTraded ? ' jesse-turn' : '');
     prevBtn.disabled = pick <= 1;
     nextBtn.disabled = pick >= TOTAL_PICKS;
@@ -1143,11 +1618,19 @@
       banner.classList.add('active');
       document.getElementById('banner-title').textContent = 'YOUR PICK';
       document.getElementById('banner-sub').textContent =
-        `${JESSE_PICK_LABELS[pick] || `Pick ${pick}`} · Jesse`;
+        `${JESSE_PICK_LABELS[pick] || slotLabel} · Jesse`;
       btnClaude.style.display = 'flex';
+      if (btnClaudeTrade) btnClaudeTrade.style.display = 'flex';
     } else {
       banner.classList.remove('active');
       btnClaude.style.display = 'none';
+      if (btnClaudeTrade) btnClaudeTrade.style.display = 'none';
+      // Show whose pick it is when it's not Jesse's
+      if (!alreadyDrafted && !isTraded && ownerLabel) {
+        banner.classList.add('active');
+        document.getElementById('banner-title').textContent = `${ownerLabel}'s Pick`;
+        document.getElementById('banner-sub').textContent = `${slotLabel}${viaLabel}`;
+      }
     }
   }
 
@@ -1170,6 +1653,30 @@
         (drafted && !isJessePick_ ? ' drafted' : '') +
         (isJessePick_ ? ' jesse-drafted' : '');
 
+      // Impact data — inline next to player name
+      const imp = draftImpacts[r.name];
+      let impactInline = '';
+      if (imp && !drafted) {
+        const dynColor = imp.dynasty_score > 0 ? 'var(--green)' : imp.dynasty_score < 0 ? 'var(--red)' : 'var(--muted)';
+        const seaColor = imp.season_score > 0 ? 'var(--green)' : imp.season_score < 0 ? 'var(--red)' : 'var(--muted)';
+        const dynSign = imp.dynasty_score > 0 ? '+' : '';
+        const seaSign = imp.season_score > 0 ? '+' : '';
+        // Rank movement arrows (compare before vs after rank for each mode)
+        function rankArrow(afterRank, beforeRank) {
+          if (beforeRank === undefined || beforeRank === afterRank) return '<span class="impact-arrow" style="color:var(--muted)">—</span>';
+          if (afterRank < beforeRank) return `<span class="impact-arrow" style="color:var(--green)">↑</span>`;
+          return `<span class="impact-arrow" style="color:var(--red)">↓</span>`;
+        }
+        const dynArrow = rankArrow(imp.dynasty_after_rank, imp.dynasty_before_rank);
+        const seaArrow = rankArrow(imp.season_after_rank, imp.season_before_rank);
+        impactInline = `
+          <div class="impact-inline">
+            <span title="Dynasty: score change / resulting rank" style="color:${dynColor}">D ${dynSign}${imp.dynasty_score} ${dynArrow}<span class="impact-rank-num">#${imp.dynasty_after_rank}</span></span>
+            <span style="color:var(--border)">|</span>
+            <span title="Season: score change / resulting rank" style="color:${seaColor}">S ${seaSign}${imp.season_score} ${seaArrow}<span class="impact-rank-num">#${imp.season_after_rank}</span></span>
+          </div>`;
+      }
+
       tr.innerHTML = `
         <td class="rank-cell">${r.rank}</td>
         <td class="name-cell">
@@ -1177,7 +1684,9 @@
             ${r.name}
             <span class="pos-badge pos-${r.pos}">${r.pos}</span>
           </div>
+          ${impactInline}
         </td>
+        <td class="nfl-cell">${r.nfl_team || '—'}</td>
         <td class="college-cell">${r.college}</td>
         <td class="ktc-cell">
           ${r.dyn_value.toLocaleString()}
@@ -1248,9 +1757,12 @@
       return;
     }
     const sorted = [...state.draftLog].sort((a, b) => a.pick - b.pick);
-    container.innerHTML = sorted.map(e => `
+    container.innerHTML = sorted.map(e => {
+      const ds = getDraftSlot(e.pick);
+      const slotLabel = ds ? ds.slot : `P${e.pick}`;
+      return `
       <div class="log-item ${e.isJesse ? 'jesse-log' : ''}">
-        <div class="log-pick">P${e.pick}</div>
+        <div class="log-pick">${slotLabel}</div>
         <div class="log-player">
           ${e.playerName}
           <span class="pos-badge pos-${e.pos}" style="font-size:.6rem;margin-left:4px">${e.pos}</span>
@@ -1258,10 +1770,19 @@
         <div class="log-team">${e.teamOwner}</div>
         <button class="log-undo-btn" onclick="undoPick(${e.pick})" title="Undo this pick">✕</button>
       </div>
-    `).join('');
+    `}).join('');
 
     const complete = state.draftLog.length >= TOTAL_PICKS;
-    document.getElementById('complete-banner').classList.toggle('active', complete);
+    const banner = document.getElementById('complete-banner');
+    const completeRound = getRound(Math.max(...state.draftLog.map(e => e.pick), 0));
+    if (complete) {
+      banner.querySelector('p').textContent = 'Draft Complete';
+      banner.querySelector('small').textContent = 'All 40 picks assigned';
+    } else if (state.draftLog.length >= 10 * completeRound) {
+      banner.querySelector('p').textContent = `Round ${completeRound} Complete`;
+      banner.querySelector('small').textContent = `${state.draftLog.length} of 40 picks made`;
+    }
+    banner.classList.toggle('active', complete || state.draftLog.length >= 10);
   }
 
   // ── Undo a pick ───────────────────────────────────────
@@ -1277,6 +1798,14 @@
     renderAll();
   }
 
+  function undoLastPick() {
+    if (state.draftLog.length === 0) return;
+    // Find the most recent pick (highest pick number in log)
+    const last = [...state.draftLog].sort((a, b) => b.pick - a.pick)[0];
+    undoPick(last.pick);
+    resetTimer();
+  }
+
   function renderAll() {
     renderPickTracker();
     renderCurrentPick();
@@ -1285,6 +1814,209 @@
     renderTopAvailable();
     renderDraftLog();
     renderTradesPanel();
+    autoFetchImpact();
+    // Fetch per-player impact preview (async, re-renders table when done)
+    _lastPreviewPick = -1; // force refresh after picks change
+    fetchDraftPreview();
+  }
+
+  // ── Per-player draft preview impact ──────────────────
+  let _lastPreviewPick = -1;
+
+  async function fetchDraftPreview() {
+    if (impactFetchPending) return;
+    const pickNum = state.currentPick;
+    if (pickNum === _lastPreviewPick && Object.keys(draftImpacts).length > 0) return;
+
+    impactFetchPending = true;
+    const avail = availablePlayers().slice(0, 25).map(p => ({
+      name: p.name, pos: p.pos, ktc_est: p.dyn_value || p.ktc_est
+    }));
+
+    try {
+      const res = await fetch('/api/draft-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pick_number: pickNum,
+          team_id: 8,
+          available: avail,
+          draft_log: state.draftLog,
+          trade_log: state.tradeLog || [],
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const data = await res.json();
+      if (data.impacts) {
+        draftImpacts = data.impacts;
+        _lastPreviewPick = pickNum;
+        renderPlayerTable();
+        renderTradeSignal(data.pick_trade_value, data.best_available_value, data.trade_targets || []);
+      }
+    } catch (err) {
+      console.warn('Draft preview fetch failed:', err.message);
+    } finally {
+      impactFetchPending = false;
+    }
+  }
+
+  function renderTradeSignal(pickValue, bestPlayerValue, tradeTargets) {
+    const el = document.getElementById('trade-signal');
+    if (!el) return;
+    // Only show on Jesse's picks
+    if (!isJessePick(state.currentPick) || state.draftLog.find(e => e.pick === state.currentPick)) {
+      el.style.display = 'none';
+      return;
+    }
+    if (!pickValue || !bestPlayerValue) {
+      el.style.display = 'none';
+      return;
+    }
+    const surplus = pickValue - bestPlayerValue;
+    const pct = Math.round((surplus / pickValue) * 100);
+    if (surplus > 500) {
+      let targetsHtml = '';
+      if (tradeTargets && tradeTargets.length > 0) {
+        const lines = tradeTargets.map(t =>
+          `<div style="margin-top:3px">Trade with <strong style="color:var(--text)">${t.owner}</strong> for <strong style="color:var(--text)">${t.pos}</strong> — ${t.player} <span style="color:var(--muted)">(val ${t.player_value.toLocaleString()}, age ${t.age})</span></div>`
+        ).join('');
+        targetsHtml = `<div style="margin-top:6px;border-top:1px solid var(--gold-bdr);padding-top:6px">${lines}</div>`;
+      }
+      el.style.display = '';
+      el.innerHTML = `
+        <div class="signal-title">Consider trading this pick</div>
+        <div class="signal-detail">
+          Pick value: <strong style="color:var(--text)">${pickValue.toLocaleString()}</strong>
+          &nbsp;vs&nbsp; Best available: <strong style="color:var(--text)">${bestPlayerValue.toLocaleString()}</strong>
+          — ~${pct}% more value via trade
+          ${targetsHtml}
+        </div>`;
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
+  // ── Draft Power Rankings Impact ────────────────────
+  let _lastImpactPickCount = -1;
+
+  function autoFetchImpact() {
+    const pickCount = state.draftLog.length;
+    const btn = document.getElementById('btn-impact');
+
+    if (pickCount === 0) {
+      btn.style.display = 'none';
+      document.getElementById('impact-tabs').style.display = 'none';
+      document.getElementById('impact-panel-title').textContent = 'Dynasty Impact';
+      document.getElementById('draft-impact').innerHTML =
+        '<div style="color:var(--muted);font-size:.8rem;padding:8px 0">Make picks to see how power rankings shift across the league.</div>';
+      _lastImpactPickCount = 0;
+      _impactData = null;
+      return;
+    }
+
+    btn.style.display = '';
+
+    // Auto-fetch when pick count changes
+    if (pickCount !== _lastImpactPickCount) {
+      _lastImpactPickCount = pickCount;
+      fetchDraftImpact();
+    }
+  }
+
+  let _impactData = null;  // cached response with season_changes + dynasty_changes
+  let _activeImpactTab = 'dynasty';  // default to dynasty
+
+  async function fetchDraftImpact() {
+    const container = document.getElementById('draft-impact');
+    container.innerHTML = '<div class="impact-loading">Computing power rankings impact...</div>';
+
+    try {
+      const res = await fetch('/api/draft-impact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          draft_log: state.draftLog,
+          trade_log: state.tradeLog || [],
+          roster_trades: state.rosterTrades || [],
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      _impactData = data;
+      document.getElementById('impact-tabs').style.display = '';
+      renderDraftImpact(_activeImpactTab);
+      // Save for advisor cross-page context
+      try { localStorage.setItem('dynasty_draft_impact', JSON.stringify({ seasonChanges: data.season_changes, dynastyChanges: data.dynasty_changes, savedAt: Date.now() })); } catch(e) {}
+    } catch (err) {
+      container.innerHTML = `<div style="color:var(--red);font-size:.8rem;padding:8px 0">Error: ${err.message}</div>`;
+    }
+  }
+
+  function switchImpactTab(tab) {
+    _activeImpactTab = tab;
+    const seasonBtn = document.getElementById('impact-tab-season');
+    const dynastyBtn = document.getElementById('impact-tab-dynasty');
+    const title = document.getElementById('impact-panel-title');
+    if (tab === 'season') {
+      seasonBtn.style.background = 'var(--accent)';
+      seasonBtn.style.color = '#fff';
+      dynastyBtn.style.background = 'transparent';
+      dynastyBtn.style.color = 'var(--muted)';
+      title.textContent = '2026 Season Impact';
+    } else {
+      dynastyBtn.style.background = 'var(--accent)';
+      dynastyBtn.style.color = '#fff';
+      seasonBtn.style.background = 'transparent';
+      seasonBtn.style.color = 'var(--muted)';
+      title.textContent = 'Dynasty Impact';
+    }
+    if (_impactData) renderDraftImpact(tab);
+  }
+
+  function renderDraftImpact(tab) {
+    const container = document.getElementById('draft-impact');
+    const changes = tab === 'season' ? (_impactData.season_changes || []) : (_impactData.dynasty_changes || _impactData.team_changes || []);
+
+    if (!changes || !changes.length) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:.8rem;padding:8px 0">No impact data available.</div>';
+      return;
+    }
+
+    let html = '<div style="display:flex;justify-content:space-between;font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:4px 0 6px;border-bottom:1px solid var(--border);margin-bottom:2px">' +
+      '<span style="min-width:24px;text-align:center">#</span>' +
+      '<span style="flex:1;margin-left:8px">Team</span>' +
+      '<span style="min-width:40px;text-align:right;margin-right:8px">Score</span>' +
+      '<span style="min-width:40px;text-align:center">\u0394</span>' +
+    '</div>';
+
+    changes.forEach(t => {
+      const isJesse = t.team_id === 8;
+      const rowClass = isJesse ? 'impact-team-row is-jesse' : 'impact-team-row';
+      const rankClass = t.after_rank <= 3 ? `impact-rank rank-${t.after_rank}` : 'impact-rank';
+
+      let delta = '';
+      if (t.rank_change > 0) {
+        delta = `<span class="impact-delta up">\u2191${t.rank_change}</span>`;
+      } else if (t.rank_change < 0) {
+        delta = `<span class="impact-delta down">\u2193${Math.abs(t.rank_change)}</span>`;
+      } else {
+        delta = `<span class="impact-delta flat">\u2014</span>`;
+      }
+
+      const scoreChange = t.score_change > 0 ? `+${t.score_change}` : `${t.score_change}`;
+      const scoreColor = t.score_change > 0 ? 'var(--green)' : t.score_change < 0 ? 'var(--red)' : 'var(--muted)';
+
+      html += `<div class="${rowClass}">
+        <span class="${rankClass}">${t.after_rank}</span>
+        <span class="impact-name">${displayOwner(t.owner)}</span>
+        <span class="impact-score">${t.after_score}</span>
+        ${delta}
+        <span style="min-width:40px;text-align:right;font-size:.72rem;color:${scoreColor}">${scoreChange}</span>
+      </div>`;
+    });
+
+    container.innerHTML = html;
   }
 
   // ── In-Draft Trade Panel ─────────────────────────────
@@ -1442,7 +2174,84 @@
     }).join('');
   }
 
+  // ── Timer ────────────────────────────────────────────
+  const TIMER_DURATION = 180; // 3 minutes in seconds
+  let timerSeconds = TIMER_DURATION;
+  let timerInterval = null;
+  let timerRunning = false;
+
+  function formatTime(s) {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  }
+
+  function updateTimerDisplay() {
+    const display = document.getElementById('timer-display');
+    const fill = document.getElementById('timer-fill');
+    const pct = (timerSeconds / TIMER_DURATION) * 100;
+
+    display.textContent = formatTime(timerSeconds);
+    fill.style.width = pct + '%';
+
+    // Color states
+    display.classList.remove('warning', 'danger');
+    fill.classList.remove('warning', 'danger');
+    if (timerSeconds <= 30) {
+      display.classList.add('danger');
+      fill.classList.add('danger');
+    } else if (timerSeconds <= 60) {
+      display.classList.add('warning');
+      fill.classList.add('warning');
+    }
+  }
+
+  function toggleTimer() {
+    const btn = document.getElementById('timer-start-btn');
+    if (timerRunning) {
+      // Pause
+      clearInterval(timerInterval);
+      timerInterval = null;
+      timerRunning = false;
+      btn.textContent = 'Resume';
+      btn.classList.remove('active-timer');
+    } else {
+      // Start / Resume
+      timerRunning = true;
+      btn.textContent = 'Pause';
+      btn.classList.add('active-timer');
+      timerInterval = setInterval(() => {
+        timerSeconds--;
+        if (timerSeconds <= 0) {
+          timerSeconds = 0;
+          clearInterval(timerInterval);
+          timerInterval = null;
+          timerRunning = false;
+          btn.textContent = 'Start';
+          btn.classList.remove('active-timer');
+          // Flash the timer
+          document.getElementById('timer-display').classList.add('danger');
+        }
+        updateTimerDisplay();
+      }, 1000);
+    }
+  }
+
+  function resetTimer() {
+    clearInterval(timerInterval);
+    timerInterval = null;
+    timerRunning = false;
+    timerSeconds = TIMER_DURATION;
+    const btn = document.getElementById('timer-start-btn');
+    btn.textContent = 'Start';
+    btn.classList.remove('active-timer');
+    updateTimerDisplay();
+  }
+
+  // Timer auto-reset is handled inside draftPlayer directly
+
   // ── Init ──────────────────────────────────────────────
+  updateTimerDisplay();
   loadState().then(() => renderAll());
 </script>
 </body>

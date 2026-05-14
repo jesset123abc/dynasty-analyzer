@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Power Rankings — Dynasty Analyzer</title>
+  <style>
+    :root {
+      --bg:        #0d1117;
+      --bg-card:   #161b22;
+      --bg-input:  #0d1117;
+      --border:    #30363d;
+      --border-hi: #484f58;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --green-dim: rgba(63,185,80,.15);
+      --green-bdr: rgba(63,185,80,.35);
+      --blue:      #58a6ff;
+      --blue-dim:  rgba(88,166,255,.08);
+      --blue-bdr:  rgba(88,166,255,.25);
+      --red:       #f85149;
+      --red-dim:   rgba(248,81,73,.15);
+      --red-bdr:   rgba(248,81,73,.35);
+      --gold:      #e3b341;
+      --gold-dim:  rgba(227,179,65,.15);
+      --gold-bdr:  rgba(227,179,65,.35);
+      --purple:    #bc8cff;
+      --orange:    #f78166;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      font-size: 15px;
+    }
+
+    .header {
+      background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .header-icon { font-size: 2rem; }
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--gold) 0%, var(--green) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header p { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+
+    .nav-links { display: flex; gap: 8px; }
+    .nav-link {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 16px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+      transition: all .2s;
+    }
+    .nav-link:hover { color: var(--text); border-color: var(--border-hi); }
+    .nav-link.active { background: var(--gold-dim); border-color: var(--gold-bdr); color: var(--gold); }
+
+    .main { max-width: 1100px; margin: 0 auto; padding: 28px 32px; }
+
+    {% if error %}
+    .top-error {
+      background: var(--red-dim);
+      border: 1px solid var(--red-bdr);
+      border-radius: 10px;
+      padding: 14px 18px;
+      color: var(--red);
+      font-size: 0.875rem;
+      margin-bottom: 20px;
+    }
+    {% endif %}
+
+    /* ── Mode Toggle ─────────────────────────────────── */
+    .mode-toggle {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    .pill-group {
+      display: inline-flex;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 50px;
+      padding: 4px;
+      gap: 4px;
+    }
+    .pill-btn {
+      padding: 10px 28px;
+      border-radius: 50px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .2s;
+      font-family: inherit;
+    }
+    .pill-btn:hover { color: var(--text); }
+    .pill-btn.active {
+      background: linear-gradient(135deg, var(--gold-dim), rgba(63,185,80,.12));
+      border: 1px solid var(--gold-bdr);
+      color: var(--gold);
+      box-shadow: 0 0 12px rgba(227,179,65,.15);
+    }
+
+    .rankings-title {
+      text-align: center;
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 18px;
+      color: var(--text);
+    }
+
+    .rankings-panel { display: none; }
+    .rankings-panel.active { display: block; }
+
+    /* ── Team Card ────────────────────────────────────── */
+    .rank-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      transition: border-color .2s;
+      cursor: pointer;
+    }
+    .rank-card:hover { border-color: var(--border-hi); }
+    .rank-card.my-team {
+      border-color: var(--gold-bdr);
+      background: linear-gradient(135deg, rgba(227,179,65,.04), var(--bg-card));
+    }
+    .rank-card.expanded .card-detail { display: block; }
+    .rank-card.expanded .expand-arrow { transform: rotate(180deg); }
+
+    /* ── Card top row: rank + name + total value ─────── */
+    .card-top {
+      display: flex;
+      align-items: center;
+      padding: 16px 20px 6px;
+      gap: 14px;
+    }
+    .rank-num {
+      font-size: 1.6rem;
+      font-weight: 800;
+      min-width: 40px;
+      color: var(--muted);
+      line-height: 1;
+    }
+    .rank-num.r1 { color: var(--gold); }
+    .rank-num.r2 { color: #c0c0c0; }
+    .rank-num.r3 { color: #cd7f32; }
+
+    .team-name-line {
+      flex: 1;
+      min-width: 0;
+    }
+    .team-name {
+      font-weight: 700;
+      font-size: 1.05rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .team-tagline {
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-style: italic;
+      margin-left: 8px;
+    }
+
+    .total-value {
+      font-size: 1.5rem;
+      font-weight: 800;
+      text-align: right;
+      min-width: 80px;
+      flex-shrink: 0;
+    }
+    .expand-arrow {
+      font-size: 0.7rem;
+      color: var(--muted);
+      transition: transform .2s;
+      margin-left: 4px;
+    }
+
+    /* ── Position bars (full width) ──────────────────── */
+    .pos-bars-area {
+      padding: 4px 20px 12px 74px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .pos-bar-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 14px;
+    }
+    .pos-bar-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      min-width: 22px;
+      text-align: right;
+    }
+    .c-qb { color: var(--blue); }
+    .c-wr { color: var(--orange); }
+    .c-rb { color: var(--green); }
+    .c-te { color: var(--purple); }
+    .c-pk { color: var(--muted); }
+
+    .pos-bar-track {
+      flex: 1;
+      height: 5px;
+      background: rgba(255,255,255,.06);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .pos-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+    }
+    .fill-qb { background: var(--blue); }
+    .fill-wr { background: var(--orange); }
+    .fill-rb { background: var(--green); }
+    .fill-te { background: var(--purple); }
+    .fill-pk { background: var(--muted); }
+
+    .pos-bar-rank {
+      font-size: 0.7rem;
+      min-width: 40px;
+      text-align: right;
+    }
+
+    /* ── Expanded detail ─────────────────────────────── */
+    .card-detail {
+      display: none;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Tabs */
+    .detail-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-tab {
+      flex: 1;
+      text-align: center;
+      padding: 10px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all .15s;
+      background: none;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+      font-family: inherit;
+    }
+    .detail-tab:hover { color: var(--text); }
+    .detail-tab.active {
+      color: var(--text);
+      border-bottom-color: var(--gold);
+    }
+    .tab-panel { display: none; padding: 16px 20px; }
+    .tab-panel.active { display: block; }
+
+    /* ── Roster table ────────────────────────────────── */
+    .roster-header {
+      display: flex;
+      padding: 0 0 6px;
+      font-size: 0.68rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .rh-ktc { min-width: 50px; text-align: right; }
+    .rh-ovr { min-width: 40px; text-align: right; }
+    .rh-pos { min-width: 50px; text-align: right; }
+
+    .roster-pos-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 8px 0 4px;
+    }
+
+    .roster-row {
+      display: flex;
+      align-items: center;
+      padding: 5px 0;
+      font-size: 0.85rem;
+      border-bottom: 1px solid rgba(48,54,61,.25);
+    }
+    .roster-row:last-child { border-bottom: none; }
+    .rr-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-right: 10px;
+    }
+    .rr-name {
+      flex: 1;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .rr-age {
+      min-width: 32px;
+      text-align: right;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+    .rr-ktc {
+      min-width: 50px;
+      text-align: right;
+      font-weight: 600;
+      font-size: 0.82rem;
+    }
+    .rr-ovr {
+      min-width: 40px;
+      text-align: right;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .rr-posrank {
+      min-width: 50px;
+      text-align: right;
+      font-size: 0.8rem;
+    }
+
+    /* ── Mini component bars (card top) ──────────────── */
+    .comp-mini {
+      display: flex;
+      gap: 3px;
+      align-items: flex-end;
+      height: 24px;
+      flex-shrink: 0;
+      margin-left: 8px;
+    }
+    .comp-mini-bar {
+      width: 6px;
+      border-radius: 2px 2px 0 0;
+      min-height: 2px;
+    }
+    .cm-starters { background: var(--green); }
+    .cm-roster   { background: var(--blue); }
+    .cm-capital  { background: var(--gold); }
+    .cm-balance  { background: var(--purple); }
+    .cm-youth    { background: var(--orange); }
+    .cm-prospects { background: #d2a8ff; }
+    .cm-depth    { background: #a5d6ff; }
+
+    /* ── Picks row ───────────────────────────────────── */
+    .picks-row {
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      border-top: 1px solid var(--border);
+      font-size: 0.78rem;
+    }
+    .picks-label {
+      color: var(--muted);
+      font-weight: 600;
+      margin-right: 4px;
+    }
+    .pick-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 0.72rem;
+    }
+    .pick-chip-name { color: var(--text); font-weight: 600; }
+    .pick-chip-val { color: var(--muted); font-size: 0.68rem; }
+
+    /* ── Analysis tab ────────────────────────────────── */
+    .analysis-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .analysis-section {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .analysis-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--muted);
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 0;
+      font-size: 0.85rem;
+      border-bottom: 1px solid rgba(48,54,61,.3);
+    }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { color: var(--muted); }
+    .stat-value { font-weight: 600; }
+
+    .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag-strength {
+      display: inline-block; padding: 4px 10px; border-radius: 20px;
+      font-size: 0.75rem; font-weight: 500;
+      background: var(--green-dim); border: 1px solid var(--green-bdr); color: #7ee787;
+    }
+    .tag-weakness {
+      display: inline-block; padding: 4px 10px; border-radius: 20px;
+      font-size: 0.75rem; font-weight: 500;
+      background: var(--red-dim); border: 1px solid var(--red-bdr); color: #ffa198;
+    }
+    .tag-need {
+      display: inline-block; padding: 4px 10px; border-radius: 20px;
+      font-size: 0.75rem; font-weight: 500;
+      background: var(--gold-dim); border: 1px solid var(--gold-bdr); color: var(--gold);
+    }
+
+    @media (max-width: 700px) {
+      .main { padding: 16px; }
+      .card-top { flex-wrap: wrap; gap: 8px; padding: 12px 14px 4px; }
+      .pos-bars-area { padding-left: 14px; }
+      .analysis-grid { grid-template-columns: 1fr; }
+      .nav-links { flex-wrap: wrap; }
+      .pill-btn { padding: 8px 18px; font-size: 0.82rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-icon">📊</div>
+  <div style="flex:1">
+    <h1>Power Rankings</h1>
+    <p>Dynasty roster strength · All 10 teams ranked</p>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    {% if teams %}
+    <div style="display:flex;align-items:center;gap:6px">
+      <label for="team-sel" style="color:var(--muted);font-size:.8rem;font-weight:600;white-space:nowrap">Viewing as:</label>
+      <select id="team-sel" onchange="window.location.href='/power-rankings?team_id='+this.value" style="
+        background:var(--bg-input);border:1px solid var(--border);border-radius:6px;
+        padding:5px 10px;color:var(--text);font-size:.82rem;font-family:inherit;cursor:pointer;
+      ">
+        {% for team in teams %}
+        <option value="{{ team.id }}" {% if team.id == my_team_id %}selected{% endif %}>
+          {{ team.owner.split()[0] }} — {{ team.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <nav class="nav-links">
+      <a href="/" class="nav-link">Trade Analyzer</a>
+      <a href="/power-rankings" class="nav-link active">Power Rankings</a>
+      <a href="/draft-board" class="nav-link">Draft Board</a>
+      <a href="/advisor" class="nav-link">Advisor</a>
+      <a href="/rankings" class="nav-link">Rankings</a>
+      <a href="/buy-sell" class="nav-link">Buy/Sell</a>
+    </nav>
+  </div>
+</header>
+
+<main class="main">
+
+  {% if error %}
+  <div class="top-error">ESPN fetch error: {{ error }}</div>
+  {% endif %}
+
+  <div class="mode-toggle">
+    <div class="pill-group">
+      <button class="pill-btn" data-mode="dynasty" onclick="switchMode('dynasty')">Dynasty</button>
+      <button class="pill-btn" data-mode="season" onclick="switchMode('season')">2026 Season</button>
+    </div>
+  </div>
+
+  {# ── Macro for a team card (shared by dynasty & season) ──────────── #}
+  {% macro team_card(team, my_team_id, max_pos_values, mode) %}
+  <div class="rank-card {{ 'my-team' if team.team_id == my_team_id else '' }}" onclick="toggleCard(this, event)">
+
+    <!-- Top row: rank + name + total value -->
+    <div class="card-top">
+      <div class="rank-num {{ 'r1' if team.power_rank == 1 else 'r2' if team.power_rank == 2 else 'r3' if team.power_rank == 3 else '' }}">
+        #{{ team.power_rank }}
+      </div>
+      <div class="team-name-line">
+        <span class="team-name">
+          {{ team.team_name }}
+          {% if team.team_id == my_team_id %}<span style="color:var(--gold);font-size:.7rem;margin-left:6px">YOU</span>{% endif %}
+        </span>
+        <span class="team-tagline">{{ team.owner }} · {{ team.record }} · Age {{ team.weighted_age }}</span>
+      </div>
+      {% if mode == 'dynasty' %}
+      <div class="comp-mini" title="Score: {{ team.power_score }}">
+        <div class="comp-mini-bar cm-starters" style="height:{{ [team.components.starters * 0.24, 2] | max }}px" title="Starters: {{ team.components.starters }}"></div>
+        <div class="comp-mini-bar cm-roster" style="height:{{ [team.components.roster * 0.24, 2] | max }}px" title="Roster: {{ team.components.roster }}"></div>
+        <div class="comp-mini-bar cm-capital" style="height:{{ [team.components.capital * 0.24, 2] | max }}px" title="Capital: {{ team.components.capital }}"></div>
+        <div class="comp-mini-bar cm-balance" style="height:{{ [team.components.balance * 0.24, 2] | max }}px" title="Balance: {{ team.components.balance }}"></div>
+        <div class="comp-mini-bar cm-youth" style="height:{{ [team.components.youth * 0.24, 2] | max }}px" title="Youth: {{ team.components.youth }}"></div>
+        <div class="comp-mini-bar cm-prospects" style="height:{{ [team.components.prospects * 0.24, 2] | max }}px" title="Prospects: {{ team.components.prospects }}"></div>
+      </div>
+      {% else %}
+      <div class="comp-mini" title="Score: {{ team.power_score }}">
+        <div class="comp-mini-bar cm-starters" style="height:{{ [team.components.starters * 0.24, 2] | max }}px" title="Starters: {{ team.components.starters }}"></div>
+        <div class="comp-mini-bar cm-roster" style="height:{{ [team.components.roster * 0.24, 2] | max }}px" title="Roster: {{ team.components.roster }}"></div>
+        <div class="comp-mini-bar cm-balance" style="height:{{ [team.components.balance * 0.24, 2] | max }}px" title="Balance: {{ team.components.balance }}"></div>
+        <div class="comp-mini-bar cm-depth" style="height:{{ [team.components.depth * 0.24, 2] | max }}px" title="Depth: {{ team.components.depth }}"></div>
+      </div>
+      {% endif %}
+      <div class="total-value" style="color:{{ 'var(--green)' if team.power_score >= 70 else 'var(--blue)' if team.power_score >= 40 else 'var(--red)' }}">
+        {{ (team.total_value / 1000) | round(1) }}K
+      </div>
+      <span class="expand-arrow">▼</span>
+    </div>
+
+    <!-- Position bars -->
+    <div class="pos-bars-area">
+      {% for pos, cls in [('QB','qb'),('WR','wr'),('RB','rb'),('TE','te')] %}
+      <div class="pos-bar-row">
+        <span class="pos-bar-label c-{{ cls }}">{{ pos }}</span>
+        <div class="pos-bar-track">
+          <div class="pos-bar-fill fill-{{ cls }}" style="width:{{ [team.pos_scores[pos].value / max_pos_values[pos] * 100, 2] | max }}%"></div>
+        </div>
+        <span class="pos-bar-rank" style="color:{{ 'var(--green)' if team.pos_league_ranks[pos] <= 3 else 'var(--red)' if team.pos_league_ranks[pos] >= 8 else 'var(--muted)' }}">
+          #{{ team.pos_league_ranks[pos] }} lg
+        </span>
+      </div>
+      {% endfor %}
+      {% if mode == 'dynasty' %}
+      <div class="pos-bar-row">
+        <span class="pos-bar-label c-pk">PKS</span>
+        <div class="pos-bar-track">
+          <div class="pos-bar-fill fill-pk" style="width:{{ [team.draft_capital / 25000 * 100, 2] | max }}%"></div>
+        </div>
+        <span class="pos-bar-rank" style="color:var(--muted)">{{ team.picks_count }} held</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Expanded detail -->
+    <div class="card-detail">
+      <div class="detail-tabs">
+        <button class="detail-tab active" onclick="switchTab(this, 'roster', event)">Roster</button>
+        <button class="detail-tab" onclick="switchTab(this, 'analysis', event)">Analysis</button>
+      </div>
+
+      <!-- ROSTER tab -->
+      <div class="tab-panel active" data-tab="roster">
+        <div class="roster-header">
+          <span class="rr-age">age</span>
+          <span class="rh-ktc">KTC</span>
+          <span class="rh-ovr">ovr</span>
+          <span class="rh-pos">pos rank</span>
+        </div>
+
+        {% for pos, cls in [('QB','qb'),('WR','wr'),('RB','rb'),('TE','te')] %}
+        {% set pos_players = team.roster_detail | selectattr('pos', 'equalto', pos) | list | sort(attribute='value', reverse=true) %}
+        {% if pos_players %}
+        <div class="roster-pos-label c-{{ cls }}">{{ pos }}</div>
+        {% for p in pos_players %}
+        {% if p.value > 0 %}
+        <div class="roster-row">
+          <div class="rr-dot" style="background:{{ 'var(--blue)' if cls == 'qb' else 'var(--orange)' if cls == 'wr' else 'var(--green)' if cls == 'rb' else 'var(--purple)' }}"></div>
+          <span class="rr-name">{{ p.name }}</span>
+          <span class="rr-age">{{ p.age if p.age else '' }}</span>
+          <span class="rr-ktc">{{ '{:,}'.format(p.value) }}</span>
+          <span class="rr-ovr">{{ '#' ~ p.ovr_rank if p.ovr_rank else '' }}</span>
+          <span class="rr-posrank" style="color:{{ 'var(--blue)' if cls == 'qb' else 'var(--orange)' if cls == 'wr' else 'var(--green)' if cls == 'rb' else 'var(--purple)' }}">{{ p.pos_rank }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+
+        <!-- Picks -->
+        {% if team.picks_detail %}
+        <div class="picks-row" style="border-top:none;padding-top:14px">
+          <span class="picks-label">picks // {{ team.picks_detail | length }}</span>
+          {% for pk in team.picks_detail %}
+          <span class="pick-chip">
+            <span class="pick-chip-name">{{ pk.label }}</span>
+            <span class="pick-chip-val">{{ (pk.value / 1000) | round(1) }}k</span>
+          </span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- ANALYSIS tab -->
+      <div class="tab-panel" data-tab="analysis">
+        <div class="analysis-grid">
+          <div class="analysis-section">
+            <div class="analysis-title">Key Stats</div>
+            <div class="stat-row"><span class="stat-label">Starter Value</span><span class="stat-value">{{ '{:,}'.format(team.starter_value) }}</span></div>
+            <div class="stat-row"><span class="stat-label">Total Roster Value</span><span class="stat-value">{{ '{:,}'.format(team.total_value) }}</span></div>
+            <div class="stat-row"><span class="stat-label">Draft Capital</span><span class="stat-value">{{ '{:,}'.format(team.draft_capital) }}</span></div>
+            <div class="stat-row"><span class="stat-label">Weighted Avg Age</span><span class="stat-value">{{ team.weighted_age }}</span></div>
+            <div class="stat-row"><span class="stat-label">Power Score</span><span class="stat-value" style="color:var(--green)">{{ team.power_score }}</span></div>
+          </div>
+          <div class="analysis-section">
+            <div class="analysis-title">Strengths & Weaknesses</div>
+            <div class="tag-list">
+              {% for s in team.strengths %}<span class="tag-strength">{{ s }}</span>{% endfor %}
+              {% for w in team.weaknesses %}<span class="tag-weakness">{{ w }}</span>{% endfor %}
+              {% for n in team.needs %}<span class="tag-need">Need: {{ n }}</span>{% endfor %}
+              {% if not team.strengths and not team.weaknesses and not team.needs %}
+              <span style="color:var(--muted);font-size:.8rem">Well-balanced roster</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endmacro %}
+
+  <!-- Dynasty Panel -->
+  <div id="panel-dynasty" class="rankings-panel">
+    <div class="rankings-title">Dynasty Power Rankings</div>
+    {% for team in dynasty_rankings %}
+      {{ team_card(team, my_team_id, max_pos_values, 'dynasty') }}
+    {% endfor %}
+  </div>
+
+  <!-- Season Panel -->
+  <div id="panel-season" class="rankings-panel">
+    <div class="rankings-title">2026 Season Power Rankings</div>
+    {% for team in season_rankings %}
+      {{ team_card(team, my_team_id, max_pos_values, 'season') }}
+    {% endfor %}
+  </div>
+
+</main>
+
+<script>
+function switchMode(mode) {
+  document.getElementById('panel-dynasty').classList.toggle('active', mode === 'dynasty');
+  document.getElementById('panel-season').classList.toggle('active', mode === 'season');
+  document.querySelectorAll('.pill-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+}
+
+function toggleCard(card, e) {
+  // Don't toggle if clicking a tab
+  if (e.target.closest('.detail-tab') || e.target.closest('.tab-panel')) return;
+  card.classList.toggle('expanded');
+}
+
+function switchTab(btn, tabName, e) {
+  e.stopPropagation();
+  var detail = btn.closest('.card-detail');
+  detail.querySelectorAll('.detail-tab').forEach(function(t) { t.classList.remove('active'); });
+  detail.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+  btn.classList.add('active');
+  detail.querySelector('[data-tab="' + tabName + '"]').classList.add('active');
+}
+
+switchMode('dynasty');
+</script>
+
+</body>
+</html>

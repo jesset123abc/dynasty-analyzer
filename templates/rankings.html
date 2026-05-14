@@ -57,28 +57,21 @@
       background-clip: text;
     }
     .header-sub { color: var(--muted); font-size: 0.75rem; margin-top: 2px; }
-    .header-nav { display: flex; gap: 8px; align-items: center; }
-
+    .header-nav { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
     .nav-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
       border-radius: 7px;
       padding: 7px 14px;
-      color: #fff;
+      color: var(--muted);
       font-size: 0.82rem;
       font-weight: 600;
       text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: 6px;
       white-space: nowrap;
-      transition: box-shadow .2s;
-      border: 1px solid transparent;
+      transition: all .15s;
     }
-    .nav-btn-gray {
-      background: var(--bg-card);
-      border-color: var(--border);
-      color: var(--muted);
-    }
-    .nav-btn-gray:hover { border-color: var(--border-hi); color: var(--text); }
+    .nav-btn:hover { color: var(--text); border-color: var(--border-hi); }
+    .nav-btn.active { background: var(--gold-dim); border-color: var(--gold-bdr); color: var(--gold); }
 
     /* ── Controls bar ───────────────────────────────── */
     .controls {
@@ -277,9 +270,11 @@
     </div>
   </div>
   <nav class="header-nav">
-    <a href="/" class="nav-btn nav-btn-gray">🏈 Trade Analyzer</a>
-    <a href="/advisor" class="nav-btn nav-btn-gray">🤖 Advisor</a>
-    <a href="/draft-board" class="nav-btn nav-btn-gray">🏆 Draft Board</a>
+    <a href="/" class="nav-btn">Trade Analyzer</a>
+    <a href="/power-rankings" class="nav-btn">Power Rankings</a>
+    <a href="/draft-board" class="nav-btn">Draft Board</a>
+    <a href="/advisor" class="nav-btn">Advisor</a>
+    <a href="/rankings" class="nav-btn active">Rankings</a>
   </nav>
 </header>
 
@@ -292,10 +287,6 @@
     <button class="filter-btn" data-pos="WR"  onclick="setPos(this,'WR')">WR</button>
     <button class="filter-btn" data-pos="TE"  onclick="setPos(this,'TE')">TE</button>
   </div>
-  <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--muted);cursor:pointer">
-    <input type="checkbox" id="dis-only" onchange="applyFilters()" style="cursor:pointer">
-    Show disagreements only
-  </label>
   <div class="search-wrap">
     <input type="text" id="search" placeholder="Search player…" oninput="applyFilters()">
   </div>
@@ -311,11 +302,8 @@
         <th onclick="sortBy('name')" data-col="name">Player</th>
         <th onclick="sortBy('position')" data-col="position">Pos</th>
         <th onclick="sortBy('age')" data-col="age">Age</th>
-        <th onclick="sortBy('combined')" data-col="combined">Combined</th>
-        <th onclick="sortBy('ktc')" data-col="ktc">KTC</th>
-        <th onclick="sortBy('dd')" data-col="dd">DD</th>
-        <th onclick="sortBy('fc')" data-col="fc">FC</th>
-        <th data-col="sources_count" style="cursor:default">Srcs</th>
+        <th onclick="sortBy('combined')" data-col="combined">Value</th>
+        <th onclick="sortBy('pos_rank')" data-col="pos_rank">Pos Rank</th>
       </tr>
     </thead>
     <tbody id="table-body"></tbody>
@@ -326,7 +314,7 @@
 <!-- Picks section -->
 <div class="section-header">
   <h2>🎯 Draft Pick Values</h2>
-  <p>KTC-calibrated values only — Dynasty Daddy and FantasyCalc don't provide per-slot pick values.</p>
+  <p>KTC-calibrated Superflex values</p>
 </div>
 <div class="table-wrap" style="padding-top:0">
   <table class="picks-table">
@@ -364,13 +352,7 @@ let sortDir   = 1;  // 1 = asc, -1 = desc
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function valOrNull(v) { return (v === null || v === undefined) ? null : v; }
 
-function disagreement(row) {
-  const vals = [row.ktc, row.dd, row.fc].filter(v => v !== null && v !== undefined && v > 0);
-  if (vals.length < 2) return 0;
-  const max = Math.max(...vals);
-  const min = Math.min(...vals);
-  return max > 0 ? (max - min) / max : 0;
-}
+function disagreement(row) { return 0; }
 
 function posClass(pos) {
   const map = { QB:'pos-QB', RB:'pos-RB', WR:'pos-WR', TE:'pos-TE', K:'pos-K', DEF:'pos-DEF' };
@@ -382,10 +364,9 @@ function fmtVal(v) {
   return `<td class="val-source has-data">${v.toLocaleString()}</td>`;
 }
 
-function srcDots(row) {
-  const srcs = ['ktc','dd','fc'];
-  const dots = srcs.map(s => `<div class="dot ${row[s] !== null && row[s] !== undefined ? 'on' : ''}"></div>`).join('');
-  return `<td class="src-count"><div class="src-dots">${dots}</div></td>`;
+function fmtPosRank(r) {
+  if (!r.pos_rank || r.pos_rank >= 900) return '<td class="val-source missing">—</td>';
+  return `<td class="val-source has-data">${r.position}${r.pos_rank}</td>`;
 }
 
 // ── Filter + Render ───────────────────────────────────────────────────────────
@@ -432,10 +413,7 @@ function applyFilters() {
         <td><span class="pos-badge ${posClass(r.position)}">${r.position || '—'}</span></td>
         <td class="age-col">${r.age > 0 ? r.age.toFixed(1) : '—'}</td>
         <td class="val-combined">${r.combined.toLocaleString()}</td>
-        ${fmtVal(r.ktc)}
-        ${fmtVal(r.dd)}
-        ${fmtVal(r.fc)}
-        ${srcDots(r)}
+        ${fmtPosRank(r)}
       </tr>`;
   }).join('');
 }

@@ -50,16 +50,20 @@
       flex-shrink: 0;
     }
     .header-left { display: flex; align-items: center; gap: 16px; }
-    .back-link {
+    .nav-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 12px;
       color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
       text-decoration: none;
-      font-size: 0.82rem;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      transition: color .15s;
+      white-space: nowrap;
+      transition: all .15s;
     }
-    .back-link:hover { color: var(--text); }
+    .nav-btn:hover { color: var(--text); border-color: var(--border-hi); }
+    .nav-btn.active { background: var(--purple-dim); border-color: var(--purple-bdr); color: var(--purple); }
     .header h1 {
       font-size: 1.1rem;
       font-weight: 700;
@@ -205,6 +209,25 @@
     }
     @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
 
+    .search-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--purple);
+      font-size: 0.8rem;
+      padding: 8px 0 4px;
+      animation: fadeIn .3s ease;
+    }
+    .search-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--purple);
+      animation: pulse 1.2s infinite ease-in-out;
+    }
+    @keyframes pulse { 0%,100% { opacity: .3; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.2); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
     /* ── Input bar ────────────────────────────────────── */
     .input-bar {
       border-top: 1px solid var(--border);
@@ -277,32 +300,29 @@
 
 <header class="header">
   <div class="header-left">
-    <a href="/" class="back-link">← Trade Analyzer</a>
     <div>
       <h1>🤖 Dynasty Advisor</h1>
       <div class="header-sub">Ask anything · Live league context · Powered by Claude</div>
     </div>
   </div>
-  <div style="display:flex;align-items:center;gap:12px">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <div class="team-select-wrap">
       <label for="team-sel">My Team:</label>
       <select id="team-sel">
         {% for team in teams %}
-        <option value="{{ team.id }}" {% if team.id == 8 %}selected{% endif %}>
+        <option value="{{ team.id }}" {% if team.id == my_team_id %}selected{% endif %}>
           {{ team.owner.split()[0] }} — {{ team.name }}
         </option>
         {% endfor %}
       </select>
     </div>
-    <a href="/rankings" style="
-      background:var(--bg-card);border:1px solid var(--border);border-radius:6px;
-      padding:5px 12px;color:var(--muted);font-size:.78rem;font-weight:600;
-      text-decoration:none;display:flex;align-items:center;gap:5px;white-space:nowrap;
-      transition:all .15s;
-    " onmouseover="this.style.color='var(--text)';this.style.borderColor='var(--border-hi)'"
-       onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border)'">
-      📊 Rankings
-    </a>
+    <nav style="display:flex;gap:6px;flex-wrap:wrap">
+      <a href="/" class="nav-btn">Trade Analyzer</a>
+      <a href="/power-rankings" class="nav-btn">Power Rankings</a>
+      <a href="/draft-board" class="nav-btn">Draft Board</a>
+      <a href="/advisor" class="nav-btn active">Advisor</a>
+      <a href="/rankings" class="nav-btn">Rankings</a>
+    </nav>
     <button onclick="clearSession()" style="
       background:transparent;border:1px solid var(--border);border-radius:6px;
       padding:5px 12px;color:var(--muted);font-size:.78rem;cursor:pointer;
@@ -369,30 +389,67 @@
   const TRADES_KEY  = 'dynasty_last_trades';
 
   // ── Cross-page context ────────────────────────────────
-  // Build a plain-text summary of draft board + last trades from localStorage
+  // Build a plain-text summary of ALL app data from localStorage so the advisor sees everything
   function buildAppContext() {
     const parts = [];
 
+    // 1. Draft Board state (full 40-pick draft)
     try {
       const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
       if (draft && draft.draftLog && draft.draftLog.length > 0) {
-        const lines = [`LIVE DRAFT BOARD — current pick: ${draft.currentPick} of 10`];
-        draft.draftLog.forEach(e => {
-          const me = e.isJesse ? ' ← Jesse' : '';
-          lines.push(`  Pick ${e.pick}: ${e.playerName} (${e.pos}) → ${e.teamOwner}${me}`);
+        const total = 40;
+        const lines = [`LIVE DRAFT BOARD — ${draft.draftLog.length} of ${total} picks made (current pick: ${draft.currentPick})`];
+        draft.draftLog.sort((a,b) => a.pick - b.pick).forEach(e => {
+          const rd = Math.ceil(e.pick / 10);
+          const slot = ((e.pick - 1) % 10) + 1;
+          const me = e.isJesse ? ' ← JESSE\'S PICK' : '';
+          lines.push(`  ${rd}.${String(slot).padStart(2,'0')}: ${e.playerName} (${e.pos}) → ${e.teamOwner}${me}`);
         });
-        const jessePicks = [1, 3, 10];
-        const labels = { 1: '1.01 (own)', 3: '1.03 (Alex\'s)', 10: '1.10 (Patrick\'s)' };
-        const pending = jessePicks.filter(p => !draft.draftLog.find(e => e.pick === p && e.isJesse));
+        // Jesse's picks across all rounds
+        const jesseDraftPicks = [1,3,10,12,18,21,28,38]; // Jesse's pick numbers from draft order
+        const made = draft.draftLog.filter(e => e.isJesse).map(e => e.pick);
+        const pending = jesseDraftPicks.filter(p => !made.includes(p));
         if (pending.length) {
-          lines.push(`Jesse's pending picks: ${pending.map(p => labels[p]).join(', ')}`);
-        } else {
+          const pendingLabels = pending.map(p => {
+            const rd = Math.ceil(p / 10);
+            const slot = ((p - 1) % 10) + 1;
+            return `${rd}.${String(slot).padStart(2,'0')}`;
+          });
+          lines.push(`Jesse's remaining picks: ${pendingLabels.join(', ')}`);
+        } else if (made.length > 0) {
           lines.push('Jesse has made all his picks.');
         }
+        // In-draft trades
+        if (draft.tradeLog && draft.tradeLog.length > 0) {
+          lines.push('IN-DRAFT TRADES:');
+          draft.tradeLog.forEach(t => {
+            lines.push(`  Jesse traded ${t.gave || '?'} to ${t.to || '?'} for ${t.received || '?'}`);
+          });
+        }
+        const remaining = total - draft.draftLog.length;
+        if (remaining > 0) lines.push(`(${remaining} picks remaining in draft)`);
         parts.push(lines.join('\n'));
       }
     } catch(e) {}
 
+    // 1b. Draft Power Rankings Impact (saved separately by draft board)
+    try {
+      const impact = JSON.parse(localStorage.getItem('dynasty_draft_impact') || 'null');
+      if (impact && impact.teamChanges && impact.teamChanges.length > 0) {
+        const lines = ['LIVE POST-DRAFT POWER RANKINGS (with rookies added to rosters):'];
+        impact.teamChanges.forEach(tc => {
+          let change = '';
+          if (tc.rank_change > 0) change = ` (UP ${tc.rank_change})`;
+          else if (tc.rank_change < 0) change = ` (DOWN ${Math.abs(tc.rank_change)})`;
+          const jesse = tc.team_id === 8 ? ' <<<< JESSE' : '';
+          const sc = tc.score_change >= 0 ? `+${tc.score_change}` : `${tc.score_change}`;
+          lines.push(`  #${tc.after_rank} ${tc.team_name || tc.owner} (${tc.owner}) — Score:${tc.after_score} (was ${tc.before_score}, ${sc})${change}${jesse}`);
+        });
+        parts.push(lines.join('\n'));
+      }
+    } catch(e) {}
+
+    // 2. Last Trade Analysis proposals (from Trade Analyzer or Draft Day mode)
     try {
       const saved = JSON.parse(localStorage.getItem(TRADES_KEY) || 'null');
       if (saved && saved.trades && saved.trades.length > 0) {
@@ -407,7 +464,36 @@
           lines.push(`     Jesse gives: ${gives}`);
           lines.push(`     Jesse gets:  ${gets}`);
           if (t.value_check) lines.push(`     ${t.value_check}`);
+          if (t.rationale) lines.push(`     Rationale: ${t.rationale}`);
+          // Include trade impact if available
+          if (t.impact) {
+            const imp = t.impact;
+            if (imp.before && imp.after) {
+              lines.push(`     IMPACT: Jesse rank #${imp.before.my_rank}→#${imp.after.my_rank} (score ${imp.my_score_change > 0 ? '+' : ''}${imp.my_score_change}), Partner rank #${imp.before.partner_rank}→#${imp.after.partner_rank} (score ${imp.partner_score_change > 0 ? '+' : ''}${imp.partner_score_change})`);
+            }
+          }
         });
+        parts.push(lines.join('\n'));
+      }
+    } catch(e) {}
+
+    // 3. Last Offer Evaluation (from "Evaluate an Offer" on home page)
+    try {
+      const offer = JSON.parse(localStorage.getItem('dynasty_last_offer') || 'null');
+      if (offer && offer.evaluation) {
+        const ageMin = Math.floor((Date.now() - offer.savedAt) / 60000);
+        const when = ageMin < 2 ? 'just now' : `${ageMin} min ago`;
+        const ev = offer.evaluation;
+        const lines = [`LAST OFFER EVALUATION (${when}):`];
+        lines.push(`  Offer received: ${offer.offerText}`);
+        lines.push(`  Verdict: ${ev.verdict || '?'} | Grade: ${ev.grade || '?'}`);
+        lines.push(`  KTC: Jesse gives ${ev.jesse_gives_ktc || '?'} / receives ${ev.jesse_receives_ktc || '?'}`);
+        if (ev.verdict_reason) lines.push(`  Reason: ${ev.verdict_reason}`);
+        if (ev.counter_offer && ev.counter_offer !== 'N/A') lines.push(`  Counter-offer: ${ev.counter_offer}`);
+        if (ev.impact && ev.impact.before && ev.impact.after) {
+          const imp = ev.impact;
+          lines.push(`  IMPACT: Jesse rank #${imp.before.my_rank}→#${imp.after.my_rank} (score ${imp.my_score_change > 0 ? '+' : ''}${imp.my_score_change})`);
+        }
         parts.push(lines.join('\n'));
       }
     } catch(e) {}
@@ -420,10 +506,14 @@
     const bar = document.getElementById('ctx-bar');
     if (!bar) return;
     const pills = [];
+    // Always show server-side context
+    pills.push('<span style="color:var(--purple)">🏈 Rosters · Rankings · Power Rankings · Rookies</span>');
     try {
       const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
       if (draft && draft.draftLog && draft.draftLog.length > 0) {
-        pills.push(`<span style="color:var(--green)">📋 Draft board: pick ${draft.currentPick}/10 live</span>`);
+        const hasImpact = !!localStorage.getItem('dynasty_draft_impact');
+        const impactNote = hasImpact ? ' + live power rankings impact' : '';
+        pills.push(`<span style="color:var(--green)">📋 Draft board: ${draft.draftLog.length}/40 picks${impactNote}</span>`);
       }
     } catch(e) {}
     try {
@@ -435,12 +525,16 @@
         pills.push(`<span style="color:var(--gold)">⚡ ${mode} (${saved.trades.length} proposals, ${when})</span>`);
       }
     } catch(e) {}
-    if (pills.length) {
-      bar.innerHTML = '<span style="color:var(--muted)">Advisor sees:</span> ' + pills.join('<span style="color:var(--border)"> · </span>');
-      bar.style.display = 'flex';
-    } else {
-      bar.style.display = 'none';
-    }
+    try {
+      const offer = JSON.parse(localStorage.getItem('dynasty_last_offer') || 'null');
+      if (offer && offer.evaluation) {
+        const ageMin = Math.floor((Date.now() - offer.savedAt) / 60000);
+        const when = ageMin < 2 ? 'just now' : `${ageMin}m ago`;
+        pills.push(`<span style="color:var(--blue)">📩 Offer eval: ${offer.evaluation.verdict} (${when})</span>`);
+      }
+    } catch(e) {}
+    bar.innerHTML = '<span style="color:var(--muted)">Advisor sees:</span> ' + pills.join('<span style="color:var(--border)"> · </span>');
+    bar.style.display = 'flex';
   }
 
   // ── Session persistence (localStorage — shared across tabs) ──
@@ -612,7 +706,21 @@
 
           const parsed = JSON.parse(payload);
           if (parsed.error) throw new Error(parsed.error);
+          if (parsed.status === 'searching') {
+            // Show search indicator
+            document.getElementById('live-cursor')?.remove();
+            document.getElementById('search-indicator')?.remove();
+            const ind = document.createElement('div');
+            ind.id = 'search-indicator';
+            ind.className = 'search-indicator';
+            ind.innerHTML = '<span class="search-dot"></span> Searching the web\u2026';
+            clBubble.appendChild(ind);
+            scrollToBottom();
+            continue;
+          }
           if (parsed.text) {
+            // Remove search indicator when text resumes
+            document.getElementById('search-indicator')?.remove();
             accumulated += parsed.text;
             // Remove cursor, re-render, re-add cursor
             document.getElementById('live-cursor')?.remove();

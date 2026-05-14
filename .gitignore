@@ -9,3 +9,9 @@ venv/
 *.egg-info/
 dist/
 build/
+.claude/
+*.bak
+*.log
+sleeper_cache.json
+sleeper_proj_cache.json
+sleeper_stats_cache.json

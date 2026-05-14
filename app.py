@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 from espn_data import fetch_league_data, parse_league, build_league_prompt
 from dynasty_data import fetch_all_rankings, build_rankings_summary, normalize_name, PICK_VALUES
 from rookies_data import ROOKIES_2026
+from power_rankings import compute_power_rankings
+from trade_impact import compute_trade_impact, compute_draft_impact, find_partner_team_id
+from nfl_tools import build_nfl_context, build_production_context, build_enhanced_rankings
 
 load_dotenv()
 
@@ -15,9 +18,28 @@ client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 MODEL = "claude-sonnet-4-20250514"
 
+# ESPN owner first name → draft board display name
+OWNER_DISPLAY = {
+    "Gz": "Jesse", "Gztz": "Jesse",
+    "Patrick": "Patrick", "Alexa": "Alexa",
+    "Alex": "Alex", "Bradley": "Brad",
+    "Nathaniel": "Lubin", "John": "Schueler",
+    "Grant": "Denton", "Sarah": "Driscoll",
+    "Jacob": "Jake",
+}
+
 # ── Server-side trade value validator ─────────────────────────────────────────
 # Generic round-pick estimates (when we can't match a specific named pick)
 _ROUND_EST = {"1st": 4000, "2nd": 1700, "3rd": 750, "4th": 350, "5th": 200}
+
+
+def _rookie_draft_premium(pick_number: int) -> float:
+    """15% premium for top 3 picks only. All others at face KTC value.
+    Late-round filler is handled by the roster cap instead."""
+    if pick_number and pick_number <= 3:
+        return 1.10
+    return 1.0
+
 
 def _pick_val(asset: str) -> int | None:
     """Try to match a named pick from PICK_VALUES, then fall back to round estimates."""
@@ -103,6 +125,26 @@ def _filter_trades(trades: list, style_key: str, rankings: dict) -> list:
     return out
 
 
+def _enrich_trades_with_impact(trades: list, teams: list, rankings: dict, my_team_id: int) -> list:
+    """Add power ranking impact data to each trade."""
+    for t in trades:
+        partner_name = t.get("trade_partner") or t.get("trade_partner_owner") or ""
+        partner_id = find_partner_team_id(teams, partner_name)
+        if not partner_id:
+            continue
+        give = t.get("my_team_gives", [])
+        recv = t.get("i_receive", [])
+        if not give or not recv:
+            continue
+        try:
+            impact = compute_trade_impact(teams, rankings, my_team_id, partner_id, give, recv)
+            if impact:
+                t["impact"] = impact
+        except Exception:
+            pass
+    return trades
+
+
 # ── Trade style prompt blocks ──────────────────────────────────────────────────
 # Injected into the prompt depending on the aggressiveness mode selected by user.
 TRADE_STYLES = {
@@ -163,9 +205,97 @@ def index():
     try:
         data = fetch_league_data()
         teams = parse_league(data)
-        return render_template("index.html", teams=teams, error=None)
+        my_team_id = int(request.args.get("team_id", 8))
+        return render_template("index.html", teams=teams, my_team_id=my_team_id, error=None)
     except Exception as e:
-        return render_template("index.html", teams=[], error=str(e))
+        return render_template("index.html", teams=[], my_team_id=8, error=str(e))
+
+
+@app.route("/power-rankings")
+def power_rankings_page():
+    try:
+        data = fetch_league_data()
+        teams = parse_league(data)
+        rankings = fetch_all_rankings()
+        dynasty_rankings = build_enhanced_rankings(rankings, teams, mode="dynasty")
+        season_rankings = build_enhanced_rankings(rankings, teams, mode="season")
+        pr_dynasty = compute_power_rankings(teams, dynasty_rankings, mode="dynasty", season_rankings=season_rankings, apply_draft_state=True)
+        pr_season = compute_power_rankings(teams, season_rankings, mode="season", apply_draft_state=True)
+        # Compute max positional values for bar scaling (use dynasty for both)
+        max_pos = {}
+        all_teams = pr_dynasty + pr_season
+        for pos in ["QB", "RB", "WR", "TE"]:
+            max_pos[pos] = max((t["pos_scores"][pos]["value"] for t in all_teams), default=1) or 1
+
+        # Attach roster details, positional league ranks, and picks to each entry
+        teams_by_id = {t["id"]: t for t in teams}
+        for pr_list, rnk in [(pr_dynasty, dynasty_rankings), (pr_season, season_rankings)]:
+            # Compute positional league ranks
+            for pos in ["QB", "RB", "WR", "TE"]:
+                sorted_by_pos = sorted(pr_list, key=lambda t: t["pos_scores"][pos]["value"], reverse=True)
+                for rank, entry in enumerate(sorted_by_pos, 1):
+                    entry.setdefault("pos_league_ranks", {})[pos] = rank
+
+            for entry in pr_list:
+                team = teams_by_id.get(entry["team_id"])
+                if not team:
+                    entry["roster_detail"] = []
+                    entry["picks_detail"] = []
+                    continue
+
+                # Build roster detail with overall rank and pos rank from rankings
+                roster_detail = []
+                for p in team["roster"]:
+                    nkey = normalize_name(p["name"])
+                    r = rnk.get(nkey, {})
+                    val = r.get("combined", 0)
+                    age = r.get("age", 0)
+                    pos = p.get("position", "")
+                    ovr_rank = r.get("rank", 999)
+                    pos_rank_str = ""
+                    pr_val = r.get("pos_rank", 999)
+                    if pos and pr_val and pr_val < 999:
+                        pos_rank_str = f"{pos}{pr_val}"
+                    roster_detail.append({
+                        "name": p["name"],
+                        "pos": pos,
+                        "value": val,
+                        "age": round(age, 1) if age and age > 0 else None,
+                        "ovr_rank": ovr_rank if ovr_rank < 999 else None,
+                        "pos_rank": pos_rank_str,
+                    })
+                roster_detail.sort(key=lambda x: x["value"], reverse=True)
+                entry["roster_detail"] = roster_detail
+
+                # Attach picks detail
+                picks_detail = []
+                for pk in team.get("picks_holds", []):
+                    pv = PICK_VALUES.get(pk, 0)
+                    pk_val = pv["ktc"] if isinstance(pv, dict) else (pv or 0)
+                    picks_detail.append({"label": pk, "value": pk_val})
+                picks_detail.sort(key=lambda x: x["value"], reverse=True)
+                entry["picks_detail"] = picks_detail
+
+        my_team_id = int(request.args.get("team_id", 8))
+        return render_template(
+            "power_rankings.html",
+            dynasty_rankings=pr_dynasty,
+            season_rankings=pr_season,
+            max_pos_values=max_pos,
+            my_team_id=my_team_id,
+            teams=teams,
+            error=None,
+        )
+    except Exception as e:
+        return render_template(
+            "power_rankings.html",
+            dynasty_rankings=[],
+            season_rankings=[],
+            max_pos_values={"QB": 1, "RB": 1, "WR": 1, "TE": 1},
+            my_team_id=8,
+            teams=[],
+            error=str(e),
+        )
 
 
 @app.route("/analyze", methods=["POST"])
@@ -277,6 +407,7 @@ Return ONLY a valid JSON array — no markdown, no explanation, no code fences:
 
         trades = json.loads(raw)
         trades = _filter_trades(trades, style_key, rankings)
+        trades = _enrich_trades_with_impact(trades, teams, rankings, my_team_id)
         return jsonify({"trades": trades, "my_team": my_team["name"], "trade_style": style["label"]})
 
     except json.JSONDecodeError as e:
@@ -287,6 +418,7 @@ Return ONLY a valid JSON array — no markdown, no explanation, no code fences:
             try:
                 trades = json.loads(raw[start:end])
                 trades = _filter_trades(trades, style_key, rankings)
+                trades = _enrich_trades_with_impact(trades, teams, rankings, my_team_id)
                 return jsonify({"trades": trades, "my_team": my_team["name"], "trade_style": style["label"]})
             except Exception:
                 pass
@@ -315,9 +447,6 @@ def draft_board():
                 **r,
                 "dyn_value":   info["combined"],
                 "ktc_live":    info.get("ktc"),
-                "dd_live":     info.get("dd"),
-                "fc_live":     info.get("fc"),
-                "src_count":   info.get("sources_count", 1),
                 "live":        True,
             }
         else:
@@ -325,14 +454,26 @@ def draft_board():
                 **r,
                 "dyn_value":   r["ktc_est"],
                 "ktc_live":    None,
-                "dd_live":     None,
-                "fc_live":     None,
-                "src_count":   0,
                 "live":        False,
             }
         enriched.append(entry)
 
-    return render_template("draft_board.html", rookies=enriched, owners=owners)
+    # Build team position counts for draft simulation
+    team_pos_counts = {}
+    for t in teams:
+        first = t["owner"].split()[0]
+        display = OWNER_DISPLAY.get(first, first)
+        counts = {"QB": 0, "RB": 0, "WR": 0, "TE": 0}
+        for p in t["roster"]:
+            pos = p.get("position", "")
+            if pos in counts:
+                counts[pos] += 1
+        team_pos_counts[display] = counts
+
+    return render_template(
+        "draft_board.html", rookies=enriched, owners=owners,
+        team_pos_counts=team_pos_counts,
+    )
 
 
 @app.route("/recommend-pick", methods=["POST"])
@@ -695,6 +836,7 @@ Only include trades that would receive A, B+, or B grades. Omit anything below B
 
         trades = json.loads(raw)
         trades = _filter_trades(trades, style_key, rankings)
+        trades = _enrich_trades_with_impact(trades, teams, rankings, my_team_id)
 
         return jsonify({
             "trades": trades,
@@ -711,6 +853,7 @@ Only include trades that would receive A, B+, or B grades. Omit anything below B
             try:
                 trades = json.loads(raw[start:end])
                 trades = _filter_trades(trades, style_key, rankings)
+                trades = _enrich_trades_with_impact(trades, teams, rankings, my_team_id)
                 return jsonify({"trades": trades, "my_team": my_team["name"], "mode": "draft_day", "pick_slot": pick_slot, "trade_style": style["label"]})
             except Exception:
                 pass
@@ -772,6 +915,9 @@ Evaluate this offer using Combined Dynasty Values (averaged from KTC/DynastyDadd
 Return ONLY a single JSON object — no markdown, no code fences:
 {{
   "offer_summary": "Brief one-line description of the offer",
+  "trade_partner": "Team name of the trade partner",
+  "jesse_gives": ["Player Name", "Pick Label"],
+  "jesse_receives": ["Player Name", "Pick Label"],
   "jesse_gives_ktc": 0,
   "jesse_receives_ktc": 0,
   "ktc_breakdown": "Jesse gives: Asset1 (VAL X) + Asset2 (VAL Y) = Z. Jesse receives: Asset1 (VAL X) + Asset2 (VAL Y) = Z.",
@@ -798,6 +944,21 @@ Grades: A = excellent value for Jesse, B+ = solid, B = fair, C+ = slight overpay
                 raw = raw[4:]
 
         evaluation = json.loads(raw)
+
+        # Add trade impact if we can identify partner and assets
+        give = evaluation.get("jesse_gives", [])
+        recv = evaluation.get("jesse_receives", [])
+        partner = evaluation.get("trade_partner", "")
+        if give and recv and partner:
+            partner_id = find_partner_team_id(teams, partner)
+            if partner_id:
+                try:
+                    impact = compute_trade_impact(teams, rankings, my_team_id, partner_id, give, recv)
+                    if impact:
+                        evaluation["impact"] = impact
+                except Exception:
+                    pass
+
         return jsonify({"evaluation": evaluation, "my_team": my_team["name"]})
 
     except json.JSONDecodeError as e:
@@ -822,7 +983,8 @@ def advisor():
         teams = parse_league(data)
     except Exception:
         teams = []
-    return render_template("advisor.html", teams=teams)
+    my_team_id = int(request.args.get("team_id", 8))
+    return render_template("advisor.html", teams=teams, my_team_id=my_team_id)
 
 
 @app.route("/chat", methods=["POST"])
@@ -843,68 +1005,223 @@ def chat():
         return jsonify({"error": "Team not found"}), 400
 
     rankings       = fetch_all_rankings()
-    league_summary = build_league_prompt(teams, team_id, rankings)
     rankings_block = build_rankings_summary(rankings)
 
-    # Build a compact rookie board string for the advisor context
+    # Build power rankings context (compact) — both modes
+    def _format_pr(pr_list, label):
+        lines = [f"  {label}:"]
+        for t in pr_list:
+            marker = " <<JESSE" if t["team_id"] == team_id else ""
+            needs = ",".join(t.get("needs", []))
+            strengths = ",".join(t.get("strengths", []))
+            lines.append(
+                f"  #{t['power_rank']} {t['team_name']}({t['owner']}) "
+                f"S:{t['power_score']}|Start:{t['starter_value']}|Tot:{t['total_value']}|"
+                f"Cap:{t['draft_capital']}|Age:{t['weighted_age']}|N:[{needs}]|Str:[{strengths}]{marker}"
+            )
+        return "\n".join(lines)
+
+    dynasty_r = build_enhanced_rankings(rankings, teams, mode="dynasty")
+    season_r = build_enhanced_rankings(rankings, teams, mode="season")
+    pr_dynasty = compute_power_rankings(teams, dynasty_r, mode="dynasty", season_rankings=season_r, apply_draft_state=True)
+    pr_season = compute_power_rankings(teams, season_r, mode="season", apply_draft_state=True)
+    power_rankings_block = _format_pr(pr_dynasty, "Dynasty (long-term)") + "\n" + _format_pr(pr_season, "2026 Season (win-now)")
+
+    # Build compact league rosters — starters + notable bench only
+    roster_lines = []
+    for team in teams:
+        marker = " <<MY TEAM" if team["id"] == team_id else ""
+        starters = [p for p in team["roster"] if p["slot_id"] not in (20, 21, 25)]
+        bench    = [p for p in team["roster"] if p["slot_id"] == 20]
+        # For non-Jesse teams, only show starters; for Jesse show all
+        def fmt_p(p):
+            info = rankings.get(normalize_name(p["name"]))
+            val = info["combined"] if info and info.get("combined") else 0
+            return f"{p['name']}({p.get('position','?')},V:{val})" if val else f"{p['name']}({p.get('position','?')})"
+        s_str = ", ".join(fmt_p(p) for p in starters)
+        roster_lines.append(f"{team['name']}({team['owner']},{team['wins']}-{team['losses']}){marker}")
+        roster_lines.append(f"  Start: {s_str}")
+        if team["id"] == team_id and bench:
+            roster_lines.append(f"  Bench: {', '.join(fmt_p(p) for p in bench)}")
+        elif bench:
+            # Only show bench players with value > 1000
+            notable = [p for p in bench if (rankings.get(normalize_name(p["name"]), {}).get("combined", 0) or 0) > 1000]
+            if notable:
+                roster_lines.append(f"  Key bench: {', '.join(fmt_p(p) for p in notable)}")
+        holds = team.get("picks_holds", [])
+        traded = team.get("picks_traded_away", [])
+        if holds:
+            roster_lines.append(f"  Picks: {', '.join(holds)}")
+        if traded:
+            roster_lines.append(f"  Traded away: {', '.join(traded)}")
+    league_summary = "\n".join(roster_lines)
+
+    # Build draft board context if available, including server-side impact computation
+    draft_ctx = ""
+    try:
+        with open(STATE_FILE) as f:
+            draft_state = json.load(f)
+        if draft_state and draft_state.get("draftLog"):
+            draft_lines = ["DRAFT BOARD:"]
+            for entry in sorted(draft_state["draftLog"], key=lambda e: e.get("pick", 0)):
+                pick_num = entry.get("pick", 0)
+                rd = (pick_num - 1) // 10 + 1
+                slot = (pick_num - 1) % 10 + 1
+                j = "*" if entry.get("isJesse") else ""
+                draft_lines.append(
+                    f"  {rd}.{slot:02d}: {entry.get('playerName','?')}({entry.get('pos','?')})→{entry.get('teamOwner','?')}{j}"
+                )
+            remaining = 40 - len(draft_state["draftLog"])
+            if remaining > 0:
+                draft_lines.append(f"  ({remaining} remaining)")
+            if draft_state.get("tradeLog"):
+                draft_lines.append("  TRADES:")
+                for t in draft_state["tradeLog"]:
+                    draft_lines.append(f"    Jesse traded {t.get('gave','')} to {t.get('to','')} for {t.get('received','')}")
+
+            # Compute post-draft power rankings impact server-side
+            try:
+                draft_picks = []
+                for entry in draft_state["draftLog"]:
+                    owner = entry.get("teamOwner", "")
+                    tid = _owner_to_team_id(owner)
+                    if tid:
+                        draft_picks.append({
+                            "pick": entry.get("pick"),
+                            "player_name": entry.get("playerName", ""),
+                            "pos": entry.get("pos", ""),
+                            "team_id": tid,
+                        })
+                trade_log_for_impact = []
+                for t in (draft_state.get("tradeLog") or []):
+                    to_id = _owner_to_team_id(t.get("to", ""))
+                    if to_id:
+                        trade_log_for_impact.append({
+                            "gave": t.get("gave", ""),
+                            "from_team_id": 8,
+                            "to_team_id": to_id,
+                        })
+                if draft_picks:
+                    impact = compute_draft_impact(teams, rankings, draft_picks, trade_log_for_impact or None)
+                    def _fmt_impact(changes, label):
+                        lines = [f"\nPOST-DRAFT {label} (rookies added):"]
+                        for tc in changes:
+                            ch = ""
+                            if tc["rank_change"] > 0:
+                                ch = f" UP{tc['rank_change']}"
+                            elif tc["rank_change"] < 0:
+                                ch = f" DN{abs(tc['rank_change'])}"
+                            j = " <<JESSE" if tc["team_id"] == team_id else ""
+                            sc = f"+{tc['score_change']}" if tc["score_change"] >= 0 else str(tc["score_change"])
+                            lines.append(
+                                f"  #{tc['after_rank']} {tc['owner']} S:{tc['after_score']}(was {tc['before_score']},{sc}){ch}{j}"
+                            )
+                        return lines
+                    if impact.get("dynasty_changes"):
+                        draft_lines.extend(_fmt_impact(impact["dynasty_changes"], "DYNASTY RANKINGS"))
+                    if impact.get("season_changes"):
+                        draft_lines.extend(_fmt_impact(impact["season_changes"], "2026 SEASON RANKINGS"))
+            except Exception:
+                pass
+
+            draft_ctx = "\n".join(draft_lines)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
+    # Compact rookie board — top 10
     rookie_lines = []
-    for r in ROOKIES_2026[:20]:   # top 20 is enough context
+    for r in ROOKIES_2026[:10]:
         info = rankings.get(normalize_name(r["name"]))
         val  = info["combined"] if info and info.get("combined") else r["ktc_est"]
-        rookie_lines.append(
-            f"  #{r['rank']}. {r['name']} ({r['pos']}, {r['college']}) — VAL:{val} | {r['notes']}"
-        )
+        rookie_lines.append(f"  #{r['rank']}. {r['name']}({r['pos']}→{r['nfl_team']}) V:{val} {r['notes']}")
     rookie_block = "\n".join(rookie_lines)
 
-    system = f"""You are an expert dynasty fantasy football advisor. The user is Jesse, and you have full context on his league, roster, situation, and the 2026 rookie class. Answer conversationally, be direct, and reference specific players and values. Always use 2026 context — the 2025 NFL season has ended.
+    system = f"""You are an expert dynasty fantasy football advisor for Jesse's 10-team Superflex league (0.5 PPR, NO TE premium). It is May 2026 — the 2026 NFL Draft has happened and rookies have landing spots. Be direct, reference specific players/values and landing-spot context, keep responses concise and actionable.
 
-=== CURRENT DATE & CONTEXT ===
-March 2026. The 2025 NFL season is OVER. The 2026 NFL Draft is in April 2026 and has NOT happened yet. Rookies below are prospects, not yet drafted.
-
-=== LEAGUE FORMAT ===
-Superflex (OP slot), NO TE premium, 0.5 PPR, 10 teams.
-
-=== PLAYER VALUES ===
-Combined Dynasty Value (0–9999) = average of KTC, Dynasty Daddy, and FantasyCalc, each normalized. Pick values are KTC-calibrated.
-
-=== CURRENT DYNASTY RANKINGS (top 40 established players) ===
+=== DYNASTY RANKINGS (top 40, combined KTC+DynastyDaddy+FantasyCalc, 0-9999) ===
 {rankings_block}
 
-=== 2026 ROOKIE CLASS (not yet drafted — April 2026) ===
+=== 2026 ROOKIES (post-draft, with NFL landing spots) ===
 {rookie_block}
 
-=== FULL LEAGUE ROSTERS (ESPN, post-2025 season) ===
+=== POWER RANKINGS (Dynasty + 2026 Season) ===
+{power_rankings_block}
+
+=== ROSTERS ===
 {league_summary}
 
+{draft_ctx}
+
 === JESSE'S SITUATION ===
-Team: {my_team['name']} | Record: {my_team['wins']}-{my_team['losses']}
+{my_team['name']} | {my_team['wins']}-{my_team['losses']}
+Key: 1.01(~7100,→Love), 1.03(Alex's,~5400,→Tate/Tyson), 1.10(Patrick's,~3000), 2027 1sts(own+Driscoll's)
+Core: Judkins(RB,22), Burden(WR,22), Olave(WR,25), Addison(WR,24)
+QB: Purdy only — Superflex vulnerability
+Rules: Never trade away only QB; 1.01/1.03 need top-15 return; 2027 1sts tradeable for QB"""
 
-KEY ASSETS:
-- 2026 1st picks: 1.01 (~7100, projects to Jeremiyah Love), 1.03 (Alex's, ~5400, projects to Carnell Tate/Tyson), 1.10 (Patrick's, ~3000)
-- Strong 2027 pick stack (Jesse's own 1st, plus Driscoll's 1st held by Jesse)
-- Young core: Quinshon Judkins (RB, 22), Luther Burden III (WR, 22), Chris Olave (WR, 25), Jordan Addison (WR, 24)
-- QB1: Brock Purdy — only real Superflex starter (long-term vulnerability)
+    # Add current NFL roster context from Sleeper
+    try:
+        nfl_ctx = build_nfl_context(teams, rankings)
+        if nfl_ctx:
+            system += f"\n\n{nfl_ctx}"
+    except Exception:
+        pass
 
-CONSTRAINTS TO ALWAYS RESPECT:
-- Never leave Jesse without a QB1 in any trade scenario
-- 2026 1.01 and 1.03 require top-15 dynasty value equivalent to move
-- 2027 1sts tradeable for real value, especially to solve the QB need
-
-Be specific. Reference actual players and values. Keep responses focused and actionable."""
+    # Add player production data (2025 actual + 2026 projected)
+    try:
+        prod_ctx = build_production_context(teams)
+        if prod_ctx:
+            system += f"\n\n{prod_ctx}"
+    except Exception:
+        pass
 
     if app_context:
-        system += f"\n\n=== LIVE APP STATE (real-time from user's browser) ===\n{app_context}"
+        system += f"\n\n=== LIVE APP STATE ===\n{app_context}"
+
+    system += "\n\nYou have web search available. Use it when you need current NFL news, player performance data, injury updates, trade rumors, or any real-world context not in your training data. Always search before making claims about current player situations."
+
+    # Web search tool (server-side, Anthropic handles execution)
+    tools = [
+        {
+            "type": "web_search_20250305",
+            "name": "web_search",
+            "max_uses": 3,
+        }
+    ]
 
     def generate():
         try:
-            with client.messages.stream(
-                model=MODEL,
-                max_tokens=2048,
-                system=system,
-                messages=messages,
-            ) as stream:
-                for text in stream.text_stream:
-                    yield f"data: {json.dumps({'text': text})}\n\n"
+            current_messages = list(messages)
+            max_rounds = 4  # handle pause_turn loops
+
+            for _ in range(max_rounds):
+                with client.messages.stream(
+                    model=MODEL,
+                    max_tokens=2048,
+                    system=system,
+                    messages=current_messages,
+                    tools=tools,
+                ) as stream:
+                    for event in stream:
+                        if hasattr(event, 'type'):
+                            if event.type == "content_block_start":
+                                block = getattr(event, 'content_block', None)
+                                if block and getattr(block, 'type', '') == "server_tool_use":
+                                    yield f"data: {json.dumps({'status': 'searching'})}\n\n"
+                            elif event.type == "content_block_delta":
+                                delta = getattr(event, 'delta', None)
+                                if delta and getattr(delta, 'type', '') == "text_delta":
+                                    yield f"data: {json.dumps({'text': delta.text})}\n\n"
+
+                    response = stream.get_final_message()
+
+                if response.stop_reason == "pause_turn":
+                    # Continue the conversation for multi-search queries
+                    current_messages.append({"role": "assistant", "content": response.content})
+                    continue
+                else:
+                    break
+
             yield "data: [DONE]\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -923,9 +1240,6 @@ def rankings_page():
             "age":           data.get("age", 0),
             "combined":      data.get("combined", 0),
             "ktc":           data.get("ktc"),
-            "dd":            data.get("dd"),
-            "fc":            data.get("fc"),
-            "sources_count": data.get("sources_count", 1),
             "rank":          data.get("rank", 999),
             "pos_rank":      data.get("pos_rank", 999),
         })
@@ -954,6 +1268,571 @@ def save_draft_state_api():
     with open(STATE_FILE, "w") as f:
         json.dump(data, f)
     return jsonify({"ok": True})
+
+
+# ── Owner name → ESPN team ID mapping ─────────────────────────────────────────
+_OWNER_TEAM_IDS = {
+    "patrick": 1, "stevenson": 1,
+    "alexa": 2, "feldman": 2,
+    "alex": 3, "wall": 3,
+    "brad": 4, "bradley": 4, "komar": 4,
+    "lubin": 5, "nathaniel": 5, "nate": 5,
+    "schueler": 6, "john": 6,
+    "denton": 7, "grant": 7,
+    "jesse": 8, "gz": 8, "gztz": 8,
+    "driscoll": 9, "sarah": 9,
+    "berkowitz": 10, "jacob": 10, "jake": 10,
+}
+
+def _owner_to_team_id(owner_name: str) -> int | None:
+    """Resolve an owner display name to ESPN team ID."""
+    if not owner_name:
+        return None
+    low = owner_name.lower().strip()
+    # Exact match
+    if low in _OWNER_TEAM_IDS:
+        return _OWNER_TEAM_IDS[low]
+    # First-name match
+    first = low.split()[0] if low else ""
+    if first in _OWNER_TEAM_IDS:
+        return _OWNER_TEAM_IDS[first]
+    # Last-name match
+    parts = low.split()
+    if len(parts) > 1 and parts[-1] in _OWNER_TEAM_IDS:
+        return _OWNER_TEAM_IDS[parts[-1]]
+    return None
+
+
+@app.route("/api/draft-impact", methods=["POST"])
+def draft_impact_api():
+    """
+    Compute power ranking shifts from draft picks + in-draft trades.
+
+    Expects JSON body:
+    {
+      "draft_log": [{"pick": 1, "playerName": "X", "pos": "RB", "teamOwner": "Jesse", "isJesse": true}],
+      "trade_log": [{"gave": "1.01", "to": "Brad", "from_team_id": 8}],
+      "roster_trades": [{"player": "X", "fromTeam": "Team A", "toTeam": "Team B"}]
+    }
+    """
+    body = request.get_json() or {}
+
+    try:
+        data = fetch_league_data()
+        teams = parse_league(data)
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch ESPN data: {e}"}), 500
+
+    rankings = fetch_all_rankings()
+    enhanced_dynasty = build_enhanced_rankings(rankings, teams, mode="dynasty")
+    enhanced_season = build_enhanced_rankings(rankings, teams, mode="season")
+
+    # Convert draft_log to format expected by compute_draft_impact
+    raw_draft = body.get("draft_log", [])
+    draft_picks = []
+    for entry in raw_draft:
+        owner = entry.get("teamOwner", "")
+        team_id = _owner_to_team_id(owner)
+        if not team_id:
+            continue
+        draft_picks.append({
+            "pick": entry.get("pick"),
+            "player_name": entry.get("playerName", ""),
+            "pos": entry.get("pos", ""),
+            "ktc_est": entry.get("ktcEst", 3000),
+            "team_id": team_id,
+        })
+
+    # Convert trade_log
+    raw_trades = body.get("trade_log", [])
+    trade_log = []
+    for entry in raw_trades:
+        from_id = 8  # Jesse is always the one trading from in this UI
+        to_owner = entry.get("to", "")
+        to_id = _owner_to_team_id(to_owner)
+        if to_id:
+            trade_log.append({
+                "gave": entry.get("gave", ""),
+                "from_team_id": from_id,
+                "to_team_id": to_id,
+            })
+
+    try:
+        result = compute_draft_impact(
+            teams, enhanced_dynasty, draft_picks, trade_log or None,
+            season_rankings=enhanced_season,
+        )
+        response = {
+            "team_changes": result.get("team_changes", result.get("dynasty_changes", [])),
+            "season_changes": result.get("season_changes", []),
+            "dynasty_changes": result.get("dynasty_changes", result.get("team_changes", [])),
+        }
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/draft-preview", methods=["POST"])
+def draft_preview_api():
+    """
+    Pre-compute power ranking impact of drafting each available player.
+
+    Expects JSON body:
+    {
+      "pick_number": 1,
+      "team_id": 8,
+      "available": [{"name": "...", "pos": "RB"}],
+      "draft_log": [...],  // existing draft picks
+      "trade_log": [...]   // existing pick trades
+    }
+
+    Returns: { "impacts": { "Player Name": { "dynasty_score": +1.2, "dynasty_rank": +1, "season_score": +0.8, "season_rank": 0 } } }
+    """
+    import copy as _copy
+
+    body = request.get_json() or {}
+    pick_number = body.get("pick_number", 1)
+    team_id = int(body.get("team_id", 8))
+    available = body.get("available", [])
+    raw_draft = body.get("draft_log", [])
+    raw_trades = body.get("trade_log", [])
+
+    try:
+        data = fetch_league_data()
+        teams = parse_league(data)
+    except Exception as e:
+        return jsonify({"error": f"ESPN fetch failed: {e}"}), 500
+
+    rankings = fetch_all_rankings()
+    enhanced_dynasty = build_enhanced_rankings(rankings, teams, mode="dynasty")
+    enhanced_season = build_enhanced_rankings(rankings, teams, mode="season")
+
+    # Apply existing draft picks to get "before" state
+    base_teams = _copy.deepcopy(teams)
+    # Use copies of rankings so we can add rookie entries without polluting originals
+    enhanced_dynasty = dict(enhanced_dynasty)
+    enhanced_season = dict(enhanced_season)
+    for entry in raw_draft:
+        owner = entry.get("teamOwner", "")
+        tid = _owner_to_team_id(owner)
+        if not tid:
+            continue
+        team = next((t for t in base_teams if t["id"] == tid), None)
+        if team:
+            pname = entry.get("playerName", "")
+            team["roster"].append({
+                "name": pname,
+                "position": entry.get("pos", ""),
+                "slot": "BE", "slot_id": 20, "player_id": 0,
+                "fpts_2026_proj": 100,  # assume rookies have projections
+            })
+            # Remove the used pick from the team's holds
+            epick = entry.get("pick", 0)
+            if epick:
+                rd = (epick - 1) // 10 + 1
+                round_labels = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
+                round_str = round_labels.get(rd, f"{rd}th")
+                for pl in list(team.get("picks_holds", [])):
+                    if f"2026 {round_str}" in pl:
+                        team["picks_holds"].remove(pl)
+                        break
+            # Ensure rookie has a ranking entry in BOTH dynasty and season rankings
+            # 1st-round picks get a tiered premium boost reflecting scarcity.
+            nkey = normalize_name(pname)
+            base_ktc = entry.get("ktcEst", 3000)
+            boosted_ktc = int(base_ktc * _rookie_draft_premium(epick))
+            premium = _rookie_draft_premium(epick)
+            for rdict in (enhanced_dynasty, enhanced_season):
+                existing = rdict.get(nkey)
+                if existing and existing.get("combined"):
+                    rdict[nkey] = dict(existing)
+                    if premium >= 1.0:
+                        # Boost: use higher of existing or boosted
+                        rdict[nkey]["combined"] = max(existing["combined"], boosted_ktc)
+                    else:
+                        # Penalty: cap down to penalized value
+                        rdict[nkey]["combined"] = min(existing["combined"], boosted_ktc)
+                    if not existing.get("age") or existing["age"] <= 0:
+                        rdict[nkey]["age"] = 21
+                else:
+                    rdict[nkey] = {
+                        "name": pname, "combined": boosted_ktc,
+                        "position": entry.get("pos", ""), "age": 21,
+                        "rank": 999, "pos_rank": 999,
+                    }
+
+    # Remove the current pick from base_teams too — it's being used regardless,
+    # so both before/after should have the same capital baseline.
+    my_base = next((t for t in base_teams if t["id"] == team_id), None)
+    if my_base:
+        rd = (pick_number - 1) // 10 + 1
+        round_labels = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
+        round_str = round_labels.get(rd, f"{rd}th")
+        for pl in list(my_base.get("picks_holds", [])):
+            if f"2026 {round_str}" in pl:
+                my_base["picks_holds"].remove(pl)
+                break
+
+    # Compute "before" rankings (with existing picks applied, current pick removed)
+    before_dyn = compute_power_rankings(base_teams, enhanced_dynasty, mode="dynasty", season_rankings=enhanced_season)
+    before_sea = compute_power_rankings(base_teams, enhanced_season, mode="season")
+
+    my_before_dyn = next((t for t in before_dyn if t["team_id"] == team_id), None)
+    my_before_sea = next((t for t in before_sea if t["team_id"] == team_id), None)
+
+    if not my_before_dyn or not my_before_sea:
+        return jsonify({"impacts": {}})
+
+    # For each available player, simulate drafting and compute impact
+    impacts = {}
+    for player in available[:25]:  # limit to top 25 for performance
+        pname = player.get("name", "")
+        ppos = player.get("pos", "")
+        ktc_est = player.get("ktc_est", 1000)
+
+        sim_teams = _copy.deepcopy(base_teams)
+        sim_rankings_dyn = dict(enhanced_dynasty)
+        sim_rankings_sea = dict(enhanced_season)
+
+        # Add player to team
+        my_sim = next((t for t in sim_teams if t["id"] == team_id), None)
+        if not my_sim:
+            continue
+        my_sim["roster"].append({
+            "name": pname, "position": ppos,
+            "slot": "BE", "slot_id": 20, "player_id": 0,
+            "fpts_2026_proj": 100,
+        })
+
+        # Ensure ranking entry — tiered draft premium/penalty + fix missing age
+        premium = _rookie_draft_premium(pick_number)
+        boosted_ktc = int(ktc_est * premium)
+        nkey = normalize_name(pname)
+        for rdict in (sim_rankings_dyn, sim_rankings_sea):
+            existing = rdict.get(nkey)
+            if existing and existing.get("combined"):
+                rdict[nkey] = dict(existing)
+                if premium >= 1.0:
+                    rdict[nkey]["combined"] = max(existing["combined"], boosted_ktc)
+                else:
+                    rdict[nkey]["combined"] = min(existing["combined"], boosted_ktc)
+                if not existing.get("age") or existing["age"] <= 0:
+                    rdict[nkey]["age"] = 21
+            else:
+                rdict[nkey] = {
+                    "name": pname, "combined": boosted_ktc,
+                    "position": ppos, "age": 21,
+                    "rank": 999, "pos_rank": 999,
+                }
+
+        # Pick already removed from baseline — no need to remove again
+
+        after_dyn = compute_power_rankings(sim_teams, sim_rankings_dyn, mode="dynasty", season_rankings=sim_rankings_sea)
+        after_sea = compute_power_rankings(sim_teams, sim_rankings_sea, mode="season")
+
+        my_after_dyn = next((t for t in after_dyn if t["team_id"] == team_id), None)
+        my_after_sea = next((t for t in after_sea if t["team_id"] == team_id), None)
+
+        if my_after_dyn and my_after_sea:
+            impacts[pname] = {
+                "dynasty_score": round(my_after_dyn["power_score"] - my_before_dyn["power_score"], 1),
+                "dynasty_before_rank": my_before_dyn["power_rank"],
+                "dynasty_after_rank": my_after_dyn["power_rank"],
+                "season_score": round(my_after_sea["power_score"] - my_before_sea["power_score"], 1),
+                "season_before_rank": my_before_sea["power_rank"],
+                "season_after_rank": my_after_sea["power_rank"],
+            }
+
+    # Compute the trade value of the current pick for the trade signal
+    pick_trade_value = 0
+    if my_base:
+        rd = (pick_number - 1) // 10 + 1
+        slot_num = ((pick_number - 1) % 10) + 1
+        slot_label = f"{rd}.{slot_num:02d}"
+        # Find the specific pick by matching slot label in the note field
+        for pv_name, pv_data in PICK_VALUES.items():
+            note = pv_data.get("note", "")
+            if slot_label in note:
+                pick_trade_value = pv_data.get("ktc", 0)
+                break
+        # Fallback: use average for the round if specific slot not found
+        if not pick_trade_value:
+            round_labels = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
+            round_str = round_labels.get(rd, f"{rd}th")
+            round_vals = [pv_data.get("ktc", 0) for pv_name, pv_data in PICK_VALUES.items()
+                          if f"2026 {round_str}" in pv_name]
+            if round_vals:
+                pick_trade_value = sum(round_vals) // len(round_vals)
+
+    # Best available player's value
+    best_player_value = max((p.get("ktc_est", 0) for p in available[:25]), default=0)
+
+    # Trade target recommendations — who to trade with and for what position
+    trade_targets = []
+    if pick_trade_value > 0 and my_before_dyn:
+        my_needs = my_before_dyn.get("needs", [])
+        # Also check which positions are weakest by looking at pos_scores
+        pos_scores = my_before_dyn.get("pos_scores", {})
+        weak_positions = []
+        for pos in ["QB", "RB", "WR", "TE"]:
+            ps = pos_scores.get(pos, {})
+            count = ps.get("count", 0)
+            top_val = ps.get("top_value", 0)
+            # Weak if in needs, or if top player is low value, or thin depth
+            if pos in my_needs:
+                weak_positions.append((pos, 3))  # high priority
+            elif count <= 1:
+                weak_positions.append((pos, 2))
+            elif top_val < 4000:
+                weak_positions.append((pos, 1))
+        weak_positions.sort(key=lambda x: -x[1])
+        target_positions = [p for p, _ in weak_positions[:3]] or ["QB", "RB", "WR"]
+
+        # Find trade partners: teams with surplus at positions we need
+        value_floor = int(pick_trade_value * 0.6)
+        value_ceiling = int(pick_trade_value * 1.3)
+        for t_rank in before_dyn:
+            if t_rank["team_id"] == team_id:
+                continue
+            t_team = next((t for t in base_teams if t["id"] == t_rank["team_id"]), None)
+            if not t_team:
+                continue
+            owner_first = t_rank["owner"].split()[0]
+            for pos in target_positions:
+                # Find players on this team at this position in the value range
+                candidates = []
+                for p in t_team["roster"]:
+                    if p["position"] != pos:
+                        continue
+                    pval = enhanced_dynasty.get(normalize_name(p["name"]), {}).get("combined", 0)
+                    age = enhanced_dynasty.get(normalize_name(p["name"]), {}).get("age", 30)
+                    if value_floor <= pval <= value_ceiling and age <= 28:
+                        candidates.append({
+                            "name": p["name"], "value": pval, "age": age,
+                        })
+                if candidates:
+                    candidates.sort(key=lambda c: -c["value"])
+                    best = candidates[0]
+                    trade_targets.append({
+                        "owner": owner_first,
+                        "pos": pos,
+                        "player": best["name"],
+                        "player_value": best["value"],
+                        "age": best["age"],
+                    })
+
+        # Sort by value match (closest to pick value = best fit)
+        trade_targets.sort(key=lambda t: abs(t["player_value"] - pick_trade_value))
+        trade_targets = trade_targets[:4]  # top 4 suggestions
+
+    return jsonify({
+        "impacts": impacts,
+        "pick_trade_value": pick_trade_value,
+        "best_available_value": best_player_value,
+        "trade_targets": trade_targets,
+    })
+
+
+# ── Buy / Sell Targets ─────────────────────────────────────────────────────────
+#
+# Uses DraftSharks dynasty rankings (percentile) vs KTC market percentile.
+# BUY: DraftSharks scores player higher than KTC → market is undervaluing
+# SELL: KTC scores player higher than DraftSharks → market is overvaluing
+import csv
+
+_DRAFTSHARKS_FILE = os.path.join(os.path.dirname(__file__), "ofantasy_rankings.csv")
+
+
+def _rank_to_percentile(rank: float, total: int) -> float:
+    """Convert rank (1=best) to percentile score (100=best, 0=worst)."""
+    if total <= 1:
+        return 100.0
+    return round(100 * (1 - (rank - 1) / (total - 1)), 1)
+
+
+def _load_expert_scores() -> dict:
+    """Load DraftSharks dynasty rankings, normalize to 0-100 percentile.
+    Returns {norm_name: {expert_score, pos, analysis}}.
+    """
+    raw = {}
+    if not os.path.exists(_DRAFTSHARKS_FILE):
+        return raw
+    with open(_DRAFTSHARKS_FILE, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            name = row.get("Player", "").strip()
+            if not name:
+                continue
+            nkey = normalize_name(name)
+            try:
+                rank = int(row.get("Rank", 0))
+            except (ValueError, TypeError):
+                continue
+            raw[nkey] = {
+                "rank": rank,
+                "pos": row.get("Fantsy Position", ""),
+                "team": row.get("Team", ""),
+                "analysis": row.get("DS Analysis", ""),
+            }
+
+    total = len(raw)
+    result = {}
+    for nkey, v in raw.items():
+        result[nkey] = {
+            "expert_score": _rank_to_percentile(v["rank"], total),
+            "ds_rank": v["rank"],
+            "pos": v["pos"],
+            "analysis": v["analysis"],
+        }
+    return result
+
+
+@app.route("/buy-sell")
+def buy_sell_page():
+    try:
+        data = fetch_league_data()
+        teams = parse_league(data)
+        rankings = fetch_all_rankings()
+        experts = _load_expert_scores()
+        my_team_id = int(request.args.get("team_id", 8))
+        threshold = float(request.args.get("threshold", 8))  # min score gap (0-100 scale)
+
+        # Count total KTC-ranked players for percentile calculation
+        ktc_total = sum(1 for r in rankings.values() if r.get("combined", 0) > 0)
+
+        buy_signals = []
+        sell_signals = []
+
+        for team in teams:
+            is_my_team = team["id"] == my_team_id
+            first = team["owner"].split()[0]
+            display_owner = OWNER_DISPLAY.get(first, first)
+
+            for p in team["roster"]:
+                nkey = normalize_name(p["name"])
+                r = rankings.get(nkey, {})
+                exp = experts.get(nkey)
+                ktc_val = r.get("combined", 0)
+                pos = p.get("position", "")
+                age = r.get("age", 0)
+
+                if not exp or pos not in ("QB", "RB", "WR", "TE"):
+                    continue
+                if ktc_val < 100:
+                    continue
+
+                # Normalize KTC to percentile (same basis as expert scores)
+                ktc_rank = r.get("rank", 999)
+                if ktc_rank >= 999:
+                    continue
+                ktc_score = _rank_to_percentile(ktc_rank, ktc_total)
+                expert_score = exp["expert_score"]
+
+                # Skip very low-value players on both sides
+                if ktc_score < 3 and expert_score < 3:
+                    continue
+
+                # Score gap: positive = experts value higher than KTC
+                gap = round(expert_score - ktc_score, 1)
+
+                # Lower threshold for own team (holds/sells are always useful to see)
+                min_gap = threshold * 0.5 if is_my_team else threshold
+                if abs(gap) < min_gap:
+                    continue
+
+                ds_rank = exp.get("ds_rank", "")
+                source_str = f"DS #{ds_rank}" if ds_rank else ""
+
+                entry = {
+                    "name": p["name"],
+                    "pos": pos,
+                    "age": round(age, 1) if age > 0 else None,
+                    "team_name": team["name"],
+                    "owner": display_owner,
+                    "is_my_team": is_my_team,
+                    "ktc_value": ktc_val,
+                    "ktc_score": ktc_score,
+                    "expert_score": expert_score,
+                    "gap": abs(gap),
+                    "source_detail": source_str,
+                    "analysis": exp.get("analysis", ""),
+                }
+
+                if gap > 0:
+                    # BUY/HOLD: experts score higher than KTC market
+                    # Skip aging vets (28+ for RB, 30+ for WR/TE, 32+ for QB)
+                    # unless they're on my team (still useful to know they're undervalued)
+                    age_cutoffs = {"RB": 28, "WR": 30, "TE": 31, "QB": 32}
+                    max_age = age_cutoffs.get(pos, 30)
+                    if age and age >= max_age and not is_my_team:
+                        continue  # not a dynasty buy target
+
+                    tags = []
+                    if is_my_team:
+                        tags.append("HOLD")
+                    elif age and age < 25:
+                        if gap >= 12:
+                            tags.append("BREAKOUT CANDIDATE")
+                        else:
+                            tags.append("YOUNG VALUE")
+                    elif gap >= 20:
+                        tags.append("UNDERVALUED")
+                    elif gap >= 12:
+                        tags.append("VALUE BUY")
+                    else:
+                        tags.append("VALUE BUY")
+                    entry["tags"] = tags
+                    entry["reason"] = (
+                        f"DS {expert_score} vs KTC {ktc_score} "
+                        f"(+{abs(gap)} pts). {source_str}"
+                    )
+                    entry["sort_score"] = gap
+                    buy_signals.append(entry)
+
+                elif gap < 0:
+                    # SELL: KTC scores higher than experts
+                    tags = []
+                    if is_my_team:
+                        tags.append("YOUR TEAM")
+                    if age and age >= 28:
+                        tags.append("AGING")
+                    if abs(gap) >= 20:
+                        tags.append("OVERVALUED")
+                    elif abs(gap) >= 12:
+                        tags.append("SELL HIGH")
+                    else:
+                        tags.append("DECLINING")
+                    entry["tags"] = tags
+                    entry["reason"] = (
+                        f"DS {expert_score} vs KTC {ktc_score} "
+                        f"({abs(gap)} pts too high on KTC). {source_str}"
+                    )
+                    entry["sort_score"] = abs(gap)
+                    sell_signals.append(entry)
+
+        buy_signals.sort(key=lambda x: x["sort_score"], reverse=True)
+        sell_signals.sort(key=lambda x: x["sort_score"], reverse=True)
+
+        return render_template(
+            "buy_sell.html",
+            buy_signals=buy_signals,
+            sell_signals=sell_signals,
+            threshold=threshold,
+            my_team_id=my_team_id,
+            teams=teams,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return render_template(
+            "buy_sell.html",
+            buy_signals=[],
+            sell_signals=[],
+            threshold=8,
+            my_team_id=8,
+            teams=[],
+            error=str(e),
+        )
 
 
 if __name__ == "__main__":

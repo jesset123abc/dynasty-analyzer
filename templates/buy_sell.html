@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buy / Sell Targets — Dynasty Analyzer</title>
+  <style>
+    :root {
+      --bg:        #0d1117;
+      --bg-card:   #161b22;
+      --bg-input:  #0d1117;
+      --border:    #30363d;
+      --border-hi: #484f58;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --green-dim: rgba(63,185,80,.15);
+      --green-bdr: rgba(63,185,80,.35);
+      --blue:      #58a6ff;
+      --blue-dim:  rgba(88,166,255,.08);
+      --blue-bdr:  rgba(88,166,255,.25);
+      --red:       #f85149;
+      --red-dim:   rgba(248,81,73,.15);
+      --red-bdr:   rgba(248,81,73,.35);
+      --gold:      #e3b341;
+      --gold-dim:  rgba(227,179,65,.15);
+      --gold-bdr:  rgba(227,179,65,.35);
+      --purple:    #bc8cff;
+      --orange:    #f78166;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      font-size: 15px;
+    }
+
+    .header {
+      background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .header-icon { font-size: 2rem; }
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--green) 0%, var(--red) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header p { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+
+    .nav-links { display: flex; gap: 8px; }
+    .nav-link {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 16px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+      transition: all .2s;
+    }
+    .nav-link:hover { color: var(--text); border-color: var(--border-hi); }
+    .nav-link.active { background: var(--gold-dim); border-color: var(--gold-bdr); color: var(--gold); }
+
+    .main { max-width: 1100px; margin: 0 auto; padding: 28px 32px; }
+
+    /* ── Summary cards ────────────────────────────────── */
+    .summary-row {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .summary-card {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+    }
+    .summary-label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 600;
+    }
+    .summary-value {
+      font-size: 1.8rem;
+      font-weight: 800;
+      margin-top: 4px;
+    }
+
+    /* ── Tab toggle ───────────────────────────────────── */
+    .tab-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .tab-btn {
+      padding: 8px 20px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all .15s;
+      font-family: inherit;
+    }
+    .tab-btn:hover { color: var(--text); border-color: var(--border-hi); }
+    .tab-btn.active-buy {
+      background: var(--green-dim);
+      border-color: var(--green-bdr);
+      color: var(--green);
+    }
+    .tab-btn.active-sell {
+      background: var(--red-dim);
+      border-color: var(--red-bdr);
+      color: var(--red);
+    }
+
+    .signal-panel { display: none; }
+    .signal-panel.active { display: block; }
+
+    /* ── Signal cards ─────────────────────────────────── */
+    .signal-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      transition: border-color .15s;
+    }
+    .signal-card:hover { border-color: var(--border-hi); }
+
+    .signal-badge {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: .04em;
+      flex-shrink: 0;
+    }
+    .badge-buy {
+      background: var(--green-dim);
+      border: 1px solid var(--green-bdr);
+      color: var(--green);
+    }
+    .badge-sell {
+      background: var(--red-dim);
+      border: 1px solid var(--red-bdr);
+      color: var(--red);
+    }
+    .badge-hold {
+      background: var(--gold-dim);
+      border: 1px solid var(--gold-bdr);
+      color: var(--gold);
+    }
+
+    .signal-info { flex: 1; min-width: 0; }
+    .signal-name-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .signal-name {
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+    .pos-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .pos-qb { background: var(--blue-dim); border: 1px solid var(--blue-bdr); color: var(--blue); }
+    .pos-rb { background: var(--green-dim); border: 1px solid var(--green-bdr); color: var(--green); }
+    .pos-wr { background: rgba(247,129,102,.12); border: 1px solid rgba(247,129,102,.35); color: var(--orange); }
+    .pos-te { background: rgba(188,140,255,.1); border: 1px solid rgba(188,140,255,.3); color: var(--purple); }
+
+    .signal-team {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-style: italic;
+      margin-left: 4px;
+    }
+    .signal-reason {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .signal-tags {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .signal-tag {
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.68rem;
+      font-weight: 600;
+    }
+    .tag-green {
+      background: var(--green-dim);
+      border: 1px solid var(--green-bdr);
+      color: var(--green);
+    }
+    .tag-red {
+      background: var(--red-dim);
+      border: 1px solid var(--red-bdr);
+      color: var(--red);
+    }
+    .tag-gold {
+      background: var(--gold-dim);
+      border: 1px solid var(--gold-bdr);
+      color: var(--gold);
+    }
+
+    /* ── Right-side stats ─────────────────────────────── */
+    .signal-stats {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      flex-shrink: 0;
+      min-width: 140px;
+    }
+    .stat-labels {
+      display: flex;
+      gap: 12px;
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .stat-values {
+      display: flex;
+      gap: 12px;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+    .stat-gap {
+      font-size: 0.78rem;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .error-box {
+      background: var(--red-dim);
+      border: 1px solid var(--red-bdr);
+      border-radius: 10px;
+      padding: 14px 18px;
+      color: var(--red);
+      font-size: 0.875rem;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 700px) {
+      .main { padding: 16px; }
+      .summary-row { flex-direction: column; }
+      .signal-card { flex-wrap: wrap; gap: 10px; }
+      .signal-stats { min-width: auto; }
+      .nav-links { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-icon">📈</div>
+  <div style="flex:1">
+    <h1>Buy / Sell Targets</h1>
+    <p>DraftSharks dynasty percentile vs KTC market percentile · normalized 0-100 scale</p>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <nav class="nav-links">
+      <a href="/" class="nav-link">Trade Analyzer</a>
+      <a href="/power-rankings" class="nav-link">Power Rankings</a>
+      <a href="/draft-board" class="nav-link">Draft Board</a>
+      <a href="/advisor" class="nav-link">Advisor</a>
+      <a href="/rankings" class="nav-link">Rankings</a>
+      <a href="/buy-sell" class="nav-link active">Buy/Sell</a>
+    </nav>
+  </div>
+</header>
+
+<main class="main">
+
+  {% if error is defined and error %}
+  <div class="error-box">Error: {{ error }}</div>
+  {% endif %}
+
+  <!-- Summary -->
+  <div class="summary-row">
+    <div class="summary-card">
+      <div class="summary-label">Buy signals</div>
+      <div class="summary-value" style="color:var(--green)">{{ buy_signals | length }}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Sell signals</div>
+      <div class="summary-value" style="color:var(--red)">{{ sell_signals | length }}</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">Method</div>
+      <div class="summary-value" style="font-size:1rem">DraftSharks vs KTC</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tab-row">
+    <button class="tab-btn active-buy" onclick="switchSignalTab('buy', this)">&#x2191; Buy ({{ buy_signals | length }})</button>
+    <button class="tab-btn" onclick="switchSignalTab('sell', this)">&#x2193; Sell ({{ sell_signals | length }})</button>
+  </div>
+
+  <!-- Buy Panel -->
+  <div id="panel-buy" class="signal-panel active">
+    {% for s in buy_signals %}
+    <div class="signal-card">
+      <span class="signal-badge {{ 'badge-hold' if s.is_my_team else 'badge-buy' }}">{{ 'HOLD' if s.is_my_team else 'BUY' }}</span>
+      <div class="signal-info">
+        <div class="signal-name-row">
+          <span class="signal-name">{{ s.name }}</span>
+          <span class="pos-badge pos-{{ s.pos | lower }}">{{ s.pos }}</span>
+          <span class="signal-team">{{ s.team_name }} ({{ s.owner }}){% if s.is_my_team %} <span style="color:var(--gold);font-size:.68rem">(YOUR TEAM)</span>{% endif %}</span>
+          {% if s.age %}<span style="color:var(--muted);font-size:.72rem">Age {{ s.age }}</span>{% endif %}
+        </div>
+        <div class="signal-reason">{{ s.reason }}</div>
+        <div class="signal-tags">
+          {% for tag in s.tags %}
+          <span class="signal-tag {{ 'tag-gold' if s.is_my_team else 'tag-green' }}">{{ tag }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="signal-stats">
+        <div class="stat-labels">
+          <span>DS</span>
+          <span>KTC</span>
+        </div>
+        <div class="stat-values">
+          <span style="color:var(--green)">{{ s.expert_score }}</span>
+          <span style="color:var(--muted)">{{ s.ktc_score }}</span>
+        </div>
+        <div class="stat-gap" style="color:var(--green)">+{{ s.gap }} pts undervalued</div>
+      </div>
+    </div>
+    {% endfor %}
+    {% if not buy_signals %}
+    <div style="text-align:center;color:var(--muted);padding:40px;font-size:.9rem">No buy signals found.</div>
+    {% endif %}
+  </div>
+
+  <!-- Sell Panel -->
+  <div id="panel-sell" class="signal-panel">
+    {% for s in sell_signals %}
+    <div class="signal-card">
+      <span class="signal-badge badge-sell">SELL</span>
+      <div class="signal-info">
+        <div class="signal-name-row">
+          <span class="signal-name">{{ s.name }}</span>
+          <span class="pos-badge pos-{{ s.pos | lower }}">{{ s.pos }}</span>
+          <span class="signal-team">{{ s.team_name }} ({{ s.owner }}){% if s.is_my_team %} <span style="color:var(--gold);font-size:.68rem">(YOUR TEAM)</span>{% endif %}</span>
+          {% if s.age %}<span style="color:var(--muted);font-size:.72rem">Age {{ s.age }}</span>{% endif %}
+        </div>
+        <div class="signal-reason">{{ s.reason }}</div>
+        <div class="signal-tags">
+          {% for tag in s.tags %}
+          <span class="signal-tag {{ 'tag-gold' if tag == 'AGING' else 'tag-red' }}">{{ tag }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="signal-stats">
+        <div class="stat-labels">
+          <span>DS</span>
+          <span>KTC</span>
+        </div>
+        <div class="stat-values">
+          <span style="color:var(--muted)">{{ s.expert_score }}</span>
+          <span style="color:var(--red)">{{ s.ktc_score }}</span>
+        </div>
+        <div class="stat-gap" style="color:var(--red)">{{ s.gap }} pts overvalued</div>
+      </div>
+    </div>
+    {% endfor %}
+    {% if not sell_signals %}
+    <div style="text-align:center;color:var(--muted);padding:40px;font-size:.9rem">No sell signals at this threshold.</div>
+    {% endif %}
+  </div>
+
+</main>
+
+<script>
+function switchSignalTab(tab, btn) {
+  document.getElementById('panel-buy').classList.toggle('active', tab === 'buy');
+  document.getElementById('panel-sell').classList.toggle('active', tab === 'sell');
+  document.querySelectorAll('.tab-btn').forEach(function(b) {
+    b.classList.remove('active-buy', 'active-sell');
+  });
+  btn.classList.add(tab === 'buy' ? 'active-buy' : 'active-sell');
+}
+</script>
+
+</body>
+</html>

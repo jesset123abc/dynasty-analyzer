@@ -1,11 +1,14 @@
 """Shared ESPN Fantasy Football data fetching and parsing."""
 import os
 import requests
+from dotenv import load_dotenv
 from picks_data import get_team_picks
 from dynasty_data import annotate_player, enrich_pick_label
 
+load_dotenv(override=True)
+
 ESPN_URL = (
-    "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/2025"
+    "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/2026"
     "/segments/0/leagues/1879404067?view=mRoster&view=mTeam&view=mDraftDetail"
 )
 
@@ -60,13 +63,39 @@ def parse_league(data):
         roster = []
         for entry in team.get("roster", {}).get("entries", []):
             slot_id = entry.get("lineupSlotId", 20)
-            player = entry.get("playerPoolEntry", {}).get("player", {})
+            ppe = entry.get("playerPoolEntry", {})
+            player = ppe.get("player", {})
+
+            # Extract fantasy points: 2025 actual + 2026 projected
+            fpts_2025 = 0.0
+            fpts_2025_avg = 0.0
+            games_played = 0
+            fpts_2026_proj = 0.0
+            fpts_2026_proj_avg = 0.0
+            for stat_entry in player.get("stats", []):
+                src = stat_entry.get("statSourceId")
+                split = stat_entry.get("statSplitTypeId")
+                season = stat_entry.get("seasonId")
+                if season == 2025 and split == 0 and src == 0:  # 2025 actual
+                    fpts_2025 = round(stat_entry.get("appliedTotal", 0), 1)
+                    fpts_2025_avg = round(stat_entry.get("appliedAverage", 0), 1)
+                    if fpts_2025_avg > 0:
+                        games_played = round(fpts_2025 / fpts_2025_avg)
+                elif season == 2026 and split == 0 and src == 1:  # 2026 projected
+                    fpts_2026_proj = round(stat_entry.get("appliedTotal", 0), 1)
+                    fpts_2026_proj_avg = round(stat_entry.get("appliedAverage", 0), 1)
+
             roster.append({
                 "name": player.get("fullName", "Unknown"),
                 "position": POSITIONS.get(player.get("defaultPositionId", 0), "???"),
                 "slot": SLOT_LABELS.get(slot_id, "BE"),
                 "slot_id": slot_id,
                 "player_id": player.get("id", 0),
+                "fpts_2025": fpts_2025,
+                "fpts_2025_avg": fpts_2025_avg,
+                "games_played": games_played,
+                "fpts_2026_proj": fpts_2026_proj,
+                "fpts_2026_proj_avg": fpts_2026_proj_avg,
             })
 
         # Sort: starters → bench → IR

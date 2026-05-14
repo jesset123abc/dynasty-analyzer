@@ -58,6 +58,23 @@
     }
     .header p { color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
 
+    /* ── Site Nav ─────────────────────────────────────── */
+    .site-nav { display: flex; gap: 6px; flex-wrap: wrap; }
+    .site-nav-link {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 16px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: all .2s;
+    }
+    .site-nav-link:hover { color: var(--text); border-color: var(--border-hi); }
+    .site-nav-link.active { background: var(--gold-dim); border-color: var(--gold-bdr); color: var(--gold); }
+
     /* ── Main layout ─────────────────────────────────── */
     .main { max-width: 1280px; margin: 0 auto; padding: 28px 32px; }
 
@@ -391,6 +408,73 @@
     }
     .dynasty-impact strong { color: var(--blue); font-weight: 600; }
 
+    /* ── Trade Impact Panel ─────────────────────────────── */
+    .impact-panel {
+      background: linear-gradient(135deg, rgba(88,166,255,.06), rgba(63,185,80,.06));
+      border: 1px solid var(--blue-bdr);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-top: 10px;
+    }
+    .impact-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-weight: 700;
+      color: var(--blue);
+      margin-bottom: 8px;
+    }
+    .impact-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      font-size: 0.82rem;
+    }
+    .impact-label { color: var(--muted); }
+    .impact-value { font-weight: 700; }
+    .impact-up { color: var(--green); }
+    .impact-down { color: var(--red); }
+    .impact-neutral { color: var(--muted); }
+    .impact-pos-changes {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .impact-pos-tag {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 12px;
+    }
+    .impact-pos-up {
+      background: var(--green-dim);
+      border: 1px solid var(--green-bdr);
+      color: #7ee787;
+    }
+    .impact-pos-down {
+      background: var(--red-dim);
+      border: 1px solid var(--red-bdr);
+      color: #ffa198;
+    }
+    .impact-needs-tag {
+      font-size: 0.72rem;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+    }
+    .impact-resolved {
+      background: var(--green-dim);
+      border: 1px solid var(--green-bdr);
+      color: #7ee787;
+    }
+    .impact-new-need {
+      background: var(--gold-dim);
+      border: 1px solid var(--gold-bdr);
+      color: var(--gold);
+    }
+
     /* ── Offer Evaluation Card ───────────────────────── */
     .eval-card {
       background: var(--bg-card);
@@ -528,61 +612,30 @@
     <h1>Dynasty Trade Analyzer</h1>
     <p>ESPN League · Season 2025 · AI-powered by Claude</p>
   </div>
-  <div style="display:flex;gap:8px">
-    <a href="/advisor" style="
-      background: linear-gradient(135deg, #6e40c9, #9765f0);
-      border: 1px solid rgba(188,140,255,.4);
-      border-radius: 8px;
-      padding: 8px 16px;
-      color: #fff;
-      font-size: 0.85rem;
-      font-weight: 600;
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      white-space: nowrap;
-      transition: all .2s;
-    " onmouseover="this.style.boxShadow='0 4px 14px rgba(150,100,240,.4)'"
-       onmouseout="this.style.boxShadow='none'">
-      🤖 Advisor
-    </a>
-    <a href="/draft-board" style="
-      background: linear-gradient(135deg, #9e6a03, #d29922);
-      border: 1px solid #d29922;
-      border-radius: 8px;
-      padding: 8px 16px;
-      color: #fff;
-      font-size: 0.85rem;
-      font-weight: 600;
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      white-space: nowrap;
-      transition: all .2s;
-    " onmouseover="this.style.boxShadow='0 4px 14px rgba(210,153,34,.4)'"
-       onmouseout="this.style.boxShadow='none'">
-      🏆 Draft Board
-    </a>
-    <a href="/rankings" style="
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 16px;
-      color: var(--muted);
-      font-size: 0.85rem;
-      font-weight: 600;
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      white-space: nowrap;
-      transition: all .2s;
-    " onmouseover="this.style.color='var(--text)';this.style.borderColor='var(--border-hi)'"
-       onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border)'">
-      📊 Rankings
-    </a>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    {% if teams %}
+    <div style="display:flex;align-items:center;gap:6px">
+      <label for="team-sel" style="color:var(--muted);font-size:.8rem;font-weight:600;white-space:nowrap">My Team:</label>
+      <select id="team-sel" style="
+        background:var(--bg-input);border:1px solid var(--border);border-radius:6px;
+        padding:5px 10px;color:var(--text);font-size:.82rem;font-family:inherit;cursor:pointer;
+      ">
+        {% for team in teams %}
+        <option value="{{ team.id }}" {% if team.id == my_team_id %}selected{% endif %}>
+          {{ team.owner.split()[0] }} — {{ team.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <nav class="site-nav">
+      <a href="/" class="site-nav-link active">Trade Analyzer</a>
+      <a href="/power-rankings" class="site-nav-link">Power Rankings</a>
+      <a href="/draft-board" class="site-nav-link">Draft Board</a>
+      <a href="/advisor" class="site-nav-link">Advisor</a>
+      <a href="/rankings" class="site-nav-link">Rankings</a>
+      <a href="/buy-sell" class="site-nav-link">Buy/Sell</a>
+    </nav>
   </div>
 </header>
 
@@ -834,7 +887,7 @@
       const res = await fetch('/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team_id: 8, trade_style: activeStyle, target_pos: targetPos }),
+        body: JSON.stringify({ team_id: parseInt(document.getElementById('team-sel').value), trade_style: activeStyle, target_pos: targetPos }),
         signal: AbortSignal.timeout(120000),
       });
       const data = await res.json();
@@ -863,7 +916,7 @@
       const res = await fetch('/draft-day', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team_id: 8, trade_style: activeStyle, pick_slot: pickSlot, draft_state: getDraftState() }),
+        body: JSON.stringify({ team_id: parseInt(document.getElementById('team-sel').value), trade_style: activeStyle, pick_slot: pickSlot, draft_state: getDraftState() }),
         signal: AbortSignal.timeout(120000),
       });
       const data = await res.json();
@@ -890,12 +943,20 @@
       const res = await fetch('/evaluate-offer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team_id: 8, offer_text: offerText }),
+        body: JSON.stringify({ team_id: parseInt(document.getElementById('team-sel').value), offer_text: offerText }),
         signal: AbortSignal.timeout(120000),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Evaluation failed');
       renderEvaluation(data.evaluation, data.my_team);
+      // Save for advisor cross-page context
+      try {
+        localStorage.setItem('dynasty_last_offer', JSON.stringify({
+          evaluation: data.evaluation,
+          offerText,
+          savedAt: Date.now(),
+        }));
+      } catch(e) {}
     } catch (err) {
       showError(err.message);
     } finally {
@@ -915,6 +976,118 @@
     '1.03': '<span class="mode-badge" style="background:var(--purple-dim);color:var(--purple);border:1px solid var(--purple-bdr)">🎯 Sell 1.03</span>',
     '1.10': '<span class="mode-badge" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-bdr)">📦 Sell 1.10</span>',
   };
+
+  function renderImpactTeamRow(label, beforeRank, afterRank, beforeScore, afterScore) {
+    const rankChange = beforeRank - afterRank;
+    const scoreChange = +(afterScore - beforeScore).toFixed(1);
+    const rankClass = rankChange > 0 ? 'impact-up' : rankChange < 0 ? 'impact-down' : 'impact-neutral';
+    const scoreClass = scoreChange > 0 ? 'impact-up' : scoreChange < 0 ? 'impact-down' : 'impact-neutral';
+    const rankArrow = rankChange > 0 ? '\u2191' : rankChange < 0 ? '\u2193' : '\u2194';
+    const rankText = rankChange !== 0 ? `(${rankChange > 0 ? '+' : ''}${rankChange})` : '';
+    return `
+      <div style="margin-bottom:6px">
+        <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">${label}</div>
+        <div class="impact-row">
+          <span class="impact-label">Rank</span>
+          <span class="impact-value ${rankClass}">#${beforeRank} ${rankArrow} #${afterRank} ${rankText}</span>
+        </div>
+        <div class="impact-row">
+          <span class="impact-label">Score</span>
+          <span class="impact-value ${scoreClass}">${beforeScore} \u2192 ${afterScore} (${scoreChange > 0 ? '+' : ''}${scoreChange})</span>
+        </div>
+      </div>`;
+  }
+
+  function renderLeagueTable(before, after) {
+    if (!before || !after || !before.length) return '';
+    const rows = after.map(a => {
+      const b = before.find(x => x.team_id === a.team_id);
+      if (!b) return '';
+      const change = b.power_rank - a.power_rank;
+      const arrow = change > 0 ? `<span class="impact-up">\u2191${change}</span>`
+                   : change < 0 ? `<span class="impact-down">\u2193${Math.abs(change)}</span>`
+                   : '<span class="impact-neutral">\u2014</span>';
+      const isJesse = a.team_id === parseInt(document.getElementById('team-sel').value);
+      const style = isJesse ? 'color:var(--gold);font-weight:700' : '';
+      return `<div class="impact-row" style="${style}">
+        <span style="min-width:22px;text-align:center;font-weight:700">${a.power_rank}</span>
+        <span style="flex:1;margin-left:8px">${a.team_name}</span>
+        <span style="min-width:45px;text-align:right;margin-right:8px">${a.power_score}</span>
+        <span style="min-width:30px;text-align:center">${arrow}</span>
+      </div>`;
+    }).join('');
+
+    return `
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+        <div style="font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+          League Standings After Trade \u25BC
+        </div>
+        <div style="display:none">
+          <div class="impact-row" style="font-size:.7rem;color:var(--muted);border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:4px">
+            <span style="min-width:22px;text-align:center">#</span>
+            <span style="flex:1;margin-left:8px">Team</span>
+            <span style="min-width:45px;text-align:right;margin-right:8px">Score</span>
+            <span style="min-width:30px;text-align:center">\u0394</span>
+          </div>
+          ${rows}
+        </div>
+      </div>`;
+  }
+
+  function renderImpact(impact) {
+    if (!impact) return '';
+
+    // My team
+    const myRow = renderImpactTeamRow('Your Team',
+      impact.before.my_rank, impact.after.my_rank,
+      impact.before.my_score, impact.after.my_score);
+
+    // Partner team
+    const partnerLabel = impact.before.partner_name
+      ? `Trade Partner (${impact.before.partner_owner || impact.before.partner_name})`
+      : 'Trade Partner';
+    const partnerRow = renderImpactTeamRow(partnerLabel,
+      impact.before.partner_rank, impact.after.partner_rank,
+      impact.before.partner_score, impact.after.partner_score);
+
+    // Positional changes (my team)
+    let posHtml = '';
+    if (impact.pos_changes) {
+      const tags = Object.entries(impact.pos_changes)
+        .filter(([_, v]) => Math.abs(v) > 100)
+        .map(([pos, v]) => {
+          const cls = v > 0 ? 'impact-pos-up' : 'impact-pos-down';
+          const sign = v > 0 ? '+' : '';
+          return `<span class="impact-pos-tag ${cls}">${pos} ${sign}${v}</span>`;
+        }).join('');
+      if (tags) posHtml = `<div class="impact-pos-changes">${tags}</div>`;
+    }
+
+    // Needs
+    let needsHtml = '';
+    const resolved = (impact.resolved_needs || []).map(n =>
+      `<span class="impact-needs-tag impact-resolved">\u2713 Fixes ${n} need</span>`
+    ).join('');
+    const newNeeds = (impact.new_needs || []).map(n =>
+      `<span class="impact-needs-tag impact-new-need">\u26A0 Creates ${n} need</span>`
+    ).join('');
+    if (resolved || newNeeds) {
+      needsHtml = `<div class="impact-pos-changes">${resolved}${newNeeds}</div>`;
+    }
+
+    // League table
+    const leagueHtml = renderLeagueTable(impact.league_before, impact.league_after);
+
+    return `
+      <div class="impact-panel">
+        <div class="impact-title">Projected Impact</div>
+        ${myRow}
+        ${partnerRow}
+        ${posHtml}
+        ${needsHtml}
+        ${leagueHtml}
+      </div>`;
+  }
 
   function renderTrades(trades, myTeam, mode, tradeStyle, pickSlot) {
     const modeBadge = document.getElementById('results-mode-badge');
@@ -968,6 +1141,7 @@
           ${t.dynasty_impact
             ? `<div class="dynasty-impact"><strong>Dynasty Impact:</strong> ${t.dynasty_impact}</div>`
             : ''}
+          ${renderImpact(t.impact)}
         </div>`;
       grid.appendChild(card);
     });
@@ -1024,6 +1198,7 @@
           <div class="ktc-breakdown-box"><strong>Breakdown:</strong> ${ev.ktc_breakdown || ''}</div>
           <div class="verdict-reason-box">${ev.verdict_reason || ''}</div>
           ${counterHtml}
+          ${renderImpact(ev.impact)}
         </div>
       </div>`;
 
