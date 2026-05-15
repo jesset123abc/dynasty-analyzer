@@ -16,7 +16,27 @@ load_dotenv()
 app = Flask(__name__)
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-MODEL = "claude-opus-4-7"
+PRIMARY_MODEL = "claude-opus-4-7"
+FALLBACK_MODEL = "claude-sonnet-4-6"
+MODEL = PRIMARY_MODEL  # legacy alias
+
+
+def _is_overload(exc: BaseException) -> bool:
+    s = str(exc).lower()
+    if "overload" in s:
+        return True
+    code = getattr(exc, "status_code", None)
+    return code in (529, 503)
+
+
+def _messages_create_with_fallback(**kwargs):
+    """Call client.messages.create on Opus 4.7, retry on Sonnet 4.6 if overloaded."""
+    try:
+        return client.messages.create(model=PRIMARY_MODEL, **kwargs)
+    except Exception as e:
+        if _is_overload(e):
+            return client.messages.create(model=FALLBACK_MODEL, **kwargs)
+        raise
 
 # ESPN owner first name → draft board display name
 OWNER_DISPLAY = {
@@ -392,8 +412,7 @@ Return ONLY a valid JSON array — no markdown, no explanation, no code fences:
 {style["grade_scale"]}"""
 
     try:
-        message = client.messages.create(
-            model=MODEL,
+        message = _messages_create_with_fallback(
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -531,8 +550,7 @@ Return ONLY a JSON object — no markdown, no code fences:
 }}"""
 
     try:
-        message = client.messages.create(
-            model=MODEL,
+        message = _messages_create_with_fallback(
             max_tokens=800,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -822,8 +840,7 @@ Return ONLY a valid JSON array — no markdown, no explanation, no code fences:
 Only include trades that would receive A, B+, or B grades. Omit anything below B."""
 
     try:
-        message = client.messages.create(
-            model=MODEL,
+        message = _messages_create_with_fallback(
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -931,8 +948,7 @@ verdict must be: ACCEPT (Combined Value within 10%), COUNTER (close but needs a 
 Grades: A = excellent value for Jesse, B+ = solid, B = fair, C+ = slight overpay, C = bad, D = terrible"""
 
     try:
-        message = client.messages.create(
-            model=MODEL,
+        message = _messages_create_with_fallback(
             max_tokens=2048,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -1207,25 +1223,40 @@ Do NOT use a search for: pure trade-math questions (use the rankings/values in t
             max_rounds = 4  # handle pause_turn loops
 
             for _ in range(max_rounds):
-                with client.messages.stream(
-                    model=MODEL,
-                    max_tokens=4096,
-                    system=system,
-                    messages=current_messages,
-                    tools=tools,
-                ) as stream:
-                    for event in stream:
-                        if hasattr(event, 'type'):
-                            if event.type == "content_block_start":
-                                block = getattr(event, 'content_block', None)
-                                if block and getattr(block, 'type', '') == "server_tool_use":
-                                    yield f"data: {json.dumps({'status': 'searching'})}\n\n"
-                            elif event.type == "content_block_delta":
-                                delta = getattr(event, 'delta', None)
-                                if delta and getattr(delta, 'type', '') == "text_delta":
-                                    yield f"data: {json.dumps({'text': delta.text})}\n\n"
+                response = None
+                last_overload = None
+                for attempt_idx, attempt_model in enumerate([PRIMARY_MODEL, FALLBACK_MODEL]):
+                    try:
+                        with client.messages.stream(
+                            model=attempt_model,
+                            max_tokens=4096,
+                            system=system,
+                            messages=current_messages,
+                            tools=tools,
+                        ) as stream:
+                            if attempt_idx > 0:
+                                yield f"data: {json.dumps({'status': 'fallback', 'message': f'{PRIMARY_MODEL} overloaded — using {FALLBACK_MODEL}'})}\n\n"
+                            for event in stream:
+                                if hasattr(event, 'type'):
+                                    if event.type == "content_block_start":
+                                        block = getattr(event, 'content_block', None)
+                                        if block and getattr(block, 'type', '') == "server_tool_use":
+                                            yield f"data: {json.dumps({'status': 'searching'})}\n\n"
+                                    elif event.type == "content_block_delta":
+                                        delta = getattr(event, 'delta', None)
+                                        if delta and getattr(delta, 'type', '') == "text_delta":
+                                            yield f"data: {json.dumps({'text': delta.text})}\n\n"
 
-                    response = stream.get_final_message()
+                            response = stream.get_final_message()
+                        break  # primary or fallback succeeded
+                    except Exception as e:
+                        if _is_overload(e) and attempt_idx == 0:
+                            last_overload = e
+                            continue
+                        raise
+
+                if response is None:
+                    raise last_overload or RuntimeError("No model response")
 
                 if response.stop_reason == "pause_turn":
                     # Continue the conversation for multi-search queries
