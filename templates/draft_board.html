@@ -1477,41 +1477,71 @@
   }
 
   async function askClaudeTrade() {
-    // Re-use the same askClaude flow but focused on trade advice
+    // Generate trade scenarios for the current Jesse pick via /draft-day
     const btn = document.getElementById('btn-claude-trade');
     const recDiv = document.getElementById('claude-rec');
     btn.disabled = true;
     btn.textContent = 'Asking Claude...';
     recDiv.classList.remove('active');
 
-    const avail = availablePlayers().map(p => ({
-      name: p.name, pos: p.pos, ktc_est: p.ktc_est
-    }));
+    // /draft-day supports specific pick slots only (1.01, 1.03, 1.10)
+    const pickToSlot = { 1: '1.01', 3: '1.03', 10: '1.10' };
+    const pick_slot = pickToSlot[state.currentPick];
+    if (!pick_slot) {
+      recDiv.innerHTML = `<div style="color:var(--red);font-size:.8rem">Trade scenarios are only available at Jesse's 1.01, 1.03, or 1.10.</div>`;
+      recDiv.classList.add('active');
+      btn.disabled = false;
+      btn.textContent = 'Ask Claude for Trade';
+      return;
+    }
 
     try {
-      const res = await fetch('/recommend-pick', {
+      const res = await fetch('/draft-day', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           team_id: 8,
-          pick_number: state.currentPick,
-          available_players: avail,
-          focus: 'trade',
+          trade_style: 'fair',
+          pick_slot: pick_slot,
+          draft_state: {
+            draftLog: state.draftLog || [],
+            tradeLog: state.tradeLog || [],
+            rosterTrades: state.rosterTrades || [],
+            picksHeld: state.picksHeld || {},
+            draftedNames: state.draftedNames || [],
+          },
         }),
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(180000),  // trade generation is slow
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
 
-      const altsHtml = (data.alternatives || []).map(a =>
-        `<div class="rec-alt-item">- ${a}</div>`
-      ).join('');
-
-      recDiv.innerHTML = `
-        <div class="rec-pick">${data.pick || '—'}</div>
-        <div class="rec-reasoning">${data.reasoning || ''}</div>
-        ${altsHtml ? `<div class="rec-alts"><div class="rec-alts-label">Alternatives</div>${altsHtml}</div>` : ''}
-      `;
+      const trades = data.trades || [];
+      if (!trades.length) {
+        recDiv.innerHTML = `<div style="color:var(--muted);font-size:.8rem">No trade suggestions returned for ${pick_slot}.</div>`;
+      } else {
+        const cards = trades.map((t, i) => {
+          const gives = (t.my_team_gives || []).map(g => `<div class="rec-alt-item">- ${g}</div>`).join('');
+          const recvs = (t.i_receive || []).map(r => `<div class="rec-alt-item">- ${r}</div>`).join('');
+          const grade = t.grade || '?';
+          const partner = [t.trade_partner, t.trade_partner_owner].filter(Boolean).join(' · ');
+          return `
+            <div class="rec-alts" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">
+              <div class="rec-alts-label">#${i+1} — Grade ${grade} — vs ${partner}</div>
+              <div style="font-size:.72rem;color:var(--muted);margin-bottom:4px">Jesse gives:</div>
+              ${gives}
+              <div style="font-size:.72rem;color:var(--muted);margin:6px 0 4px">Jesse receives:</div>
+              ${recvs}
+              ${t.rationale ? `<div class="rec-reasoning" style="margin-top:6px">${t.rationale}</div>` : ''}
+              ${t.value_check ? `<div style="font-size:.7rem;color:var(--muted);margin-top:4px">${t.value_check}</div>` : ''}
+            </div>
+          `;
+        }).join('');
+        recDiv.innerHTML = `
+          <div class="rec-pick">Trade Scenarios — Sell ${pick_slot}</div>
+          ${cards}
+        `;
+      }
       recDiv.classList.add('active');
     } catch (err) {
       recDiv.innerHTML = `<div style="color:var(--red);font-size:.8rem">Error: ${err.message}</div>`;
