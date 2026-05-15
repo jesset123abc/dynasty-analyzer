@@ -16,7 +16,7 @@ load_dotenv()
 app = Flask(__name__)
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-opus-4-7"
 
 # ESPN owner first name → draft board display name
 OWNER_DISPLAY = {
@@ -1178,14 +1178,26 @@ Rules: Never trade away only QB; 1.01/1.03 need top-15 return; 2027 1sts tradeab
     if app_context:
         system += f"\n\n=== LIVE APP STATE ===\n{app_context}"
 
-    system += "\n\nYou have web search available. Use it when you need current NFL news, player performance data, injury updates, trade rumors, or any real-world context not in your training data. Always search before making claims about current player situations."
+    system += """
+
+=== USING WEB SEARCH ===
+You have web_search available with up to 10 uses per turn. Use it AGGRESSIVELY — the data baked into this prompt is a snapshot; reality changes daily. Search proactively (don't wait to be told) whenever the user's question touches:
+- Specific players: current injury status, snap %, target share, recent game logs, depth-chart position, recent news (last 14 days)
+- Teams: coaching changes (HC/OC/DC hires/fires), scheme shifts, depth-chart battles, beat-writer reporting
+- Rookies / 2nd-year players: training camp buzz, preseason usage, OTA reports, beat-writer rankings
+- Trades / rumors / contract situations (extensions, holdouts, free agency moves)
+- Anything where your training data could be stale (cutoff ~Jan 2026; today is May 2026)
+
+When answering a player-specific question, search FIRST, then synthesize the dynasty-value implications using the rankings/rosters/production data in this prompt. Cite sources inline (e.g., "per ESPN") so the user can verify.
+
+Do NOT use a search for: pure trade-math questions (use the rankings/values in this prompt), questions Jesse already pasted into chat, or generic fantasy strategy that doesn't reference current events."""
 
     # Web search tool (server-side, Anthropic handles execution)
     tools = [
         {
             "type": "web_search_20250305",
             "name": "web_search",
-            "max_uses": 3,
+            "max_uses": 10,
         }
     ]
 
@@ -1197,7 +1209,7 @@ Rules: Never trade away only QB; 1.01/1.03 need top-15 return; 2027 1sts tradeab
             for _ in range(max_rounds):
                 with client.messages.stream(
                     model=MODEL,
-                    max_tokens=2048,
+                    max_tokens=4096,
                     system=system,
                     messages=current_messages,
                     tools=tools,
