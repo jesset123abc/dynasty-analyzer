@@ -1004,6 +1004,89 @@ def advisor():
     return render_template("advisor.html", teams=teams, my_team_id=my_team_id)
 
 
+def _build_advisor_buy_sell_block(rankings: dict, experts: dict, teams: list, my_team_id: int) -> str:
+    """
+    Identify largest BUY/SELL gaps between DraftSharks expert ranks and the
+    KTC+FC market for rostered players. Both axes are percentile-normalized so
+    a positive 'gap' means DS values higher than market (BUY candidate).
+    """
+    if not experts or not rankings:
+        return ""
+
+    # Count rankings that have a real market value for percentile calc
+    market_total = sum(1 for r in rankings.values() if r.get("combined", 0) > 0)
+    if market_total < 5:
+        return ""
+
+    def to_pct(rank, total):
+        if total <= 1:
+            return 100.0
+        return round(100 * (1 - (rank - 1) / (total - 1)), 1)
+
+    buys, sells = [], []
+    for team in teams:
+        is_mine = team["id"] == my_team_id
+        first = team["owner"].split()[0]
+        owner = OWNER_DISPLAY.get(first, first)
+        for p in team["roster"]:
+            nkey = normalize_name(p["name"])
+            r = rankings.get(nkey, {})
+            exp = experts.get(nkey)
+            if not exp or p.get("position") not in ("QB", "RB", "WR", "TE"):
+                continue
+            market_rank = r.get("rank", 999)
+            if market_rank >= 999:
+                continue
+            market_pct = to_pct(market_rank, market_total)
+            ds_pct = exp.get("expert_score", 0)
+            if market_pct < 3 and ds_pct < 3:
+                continue
+            gap = round(ds_pct - market_pct, 1)
+            if abs(gap) < 5:  # only meaningful gaps
+                continue
+            entry = {
+                "name":   p["name"],
+                "pos":    p["position"],
+                "owner":  "Jesse" if is_mine else owner,
+                "ds_pct": ds_pct,
+                "mkt_pct": market_pct,
+                "gap":    gap,
+                "mine":   is_mine,
+            }
+            (buys if gap > 0 else sells).append(entry)
+
+    buys.sort(key=lambda x: -x["gap"])
+    sells.sort(key=lambda x: x["gap"])
+
+    def _fmt(rows, label):
+        if not rows:
+            return ""
+        out = [f"  {label}:"]
+        for r in rows[:12]:
+            j = " <<JESSE" if r["mine"] else ""
+            sign = "+" if r["gap"] > 0 else ""
+            out.append(
+                f"    {r['name']}({r['pos']}) {r['owner']}: "
+                f"DS:{r['ds_pct']} vs Mkt:{r['mkt_pct']} "
+                f"({sign}{r['gap']}){j}"
+            )
+        return "\n".join(out)
+
+    parts = ["=== DRAFTSHARKS EXPERT vs MARKET — TOP GAPS ==="]
+    parts.append(
+        "Percentile-scaled (100=best). DS=DraftSharks expert composite, "
+        "Mkt=KTC+FantasyCalc average. Positive gap = DS thinks player worth "
+        "more than market (BUY signal). Negative gap = market overvaluing (SELL signal)."
+    )
+    buys_block = _fmt(buys, "BUY candidates (DS > Mkt)")
+    sells_block = _fmt(sells, "SELL candidates (Mkt > DS)")
+    if buys_block:
+        parts.append(buys_block)
+    if sells_block:
+        parts.append(sells_block)
+    return "\n".join(parts) if (buys_block or sells_block) else ""
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
     body        = request.get_json()
@@ -1022,8 +1105,7 @@ def chat():
     if not my_team:
         return jsonify({"error": "Team not found"}), 400
 
-    rankings       = fetch_all_rankings()
-    rankings_block = build_rankings_summary(rankings)
+    rankings = fetch_all_rankings()  # raw market: KTC + FantasyCalc averaged
 
     # Build power rankings context (compact) — both modes
     def _format_pr(pr_list, label):
@@ -1039,11 +1121,17 @@ def chat():
             )
         return "\n".join(lines)
 
+    # Enhanced rankings blend market values with per-game production
     dynasty_r = build_enhanced_rankings(rankings, teams, mode="dynasty")
     season_r = build_enhanced_rankings(rankings, teams, mode="season")
+    rankings_block = build_rankings_summary(dynasty_r, limit=50)
     pr_dynasty = compute_power_rankings(teams, dynasty_r, mode="dynasty", season_rankings=season_r, apply_draft_state=True)
     pr_season = compute_power_rankings(teams, season_r, mode="season", apply_draft_state=True)
     power_rankings_block = _format_pr(pr_dynasty, "Dynasty (long-term)") + "\n" + _format_pr(pr_season, "2026 Season (win-now)")
+
+    # DraftSharks expert ranks (separate methodology) — surface BUY/SELL gaps
+    experts = _load_expert_scores()
+    buy_sell_block = _build_advisor_buy_sell_block(rankings, experts, teams, team_id)
 
     # Build compact league rosters — starters + notable bench only
     roster_lines = []
@@ -1163,7 +1251,15 @@ def chat():
 
     system = f"""You are an expert dynasty fantasy football advisor for Jesse's 10-team Superflex league (0.5 PPR, NO TE premium). It is May 2026 — the 2026 NFL Draft has happened and rookies have landing spots. Be direct, reference specific players/values and landing-spot context, keep responses concise and actionable. Take Jesse's strategy brief seriously — agree when his reasoning is sound, push back specifically when the rankings/data contradict his convictions.
 
-=== DYNASTY RANKINGS (top 40, combined KTC+DynastyDaddy+FantasyCalc, 0-9999) ===
+=== DATA SOURCES (be honest about confidence) ===
+Player values below are blended from:
+  - KTC Superflex (live scrape, ~500 players, market-driven trade values)
+  - FantasyCalc Superflex 10-team 0.5 PPR (live API, crowd-sourced market)
+  - DraftSharks expert dynasty composite (CSV, ~870 players, analyst-driven)
+  - Sleeper 2025 per-game actuals + 2026 per-game projections (half-PPR)
+Where multiple sources agree, confidence is high. Where they disagree (the "BUY/SELL gap" block below), flag the disagreement and explain the methodology difference — KTC/FC are market prices, DraftSharks is analyst opinion.
+
+=== DYNASTY RANKINGS (top 50, blended: 65% market + 15% 2025 per-game + 20% 2026 per-game proj) ===
 {rankings_block}
 
 === 2026 ROOKIES (post-draft, with NFL landing spots) ===
@@ -1171,6 +1267,8 @@ def chat():
 
 === POWER RANKINGS (Dynasty + 2026 Season) ===
 {power_rankings_block}
+
+{buy_sell_block}
 
 === ROSTERS ===
 {league_summary}

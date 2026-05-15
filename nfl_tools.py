@@ -109,28 +109,30 @@ def get_nfl_team_roster(team_abbrev: str) -> list[dict]:
 def build_nfl_context(fantasy_rosters: list, rankings: dict) -> str:
     """
     Build compact NFL context for the advisor system prompt.
-    Maps fantasy-relevant players to their current NFL teams.
+    Maps fantasy-relevant players to their current NFL teams, depth-chart
+    position, and structured injury data (body part + start date).
     """
     players_data = _fetch_sleeper()
     if not players_data:
         return ""
 
-    # Build a quick lookup by normalized name
     nfl_lookup = {}
     for pid, p in players_data.items():
         full = f"{p.get('first_name', '')} {p.get('last_name', '')}".strip()
-        if not full.strip():
+        if not full:
             continue
-        norm = normalize_name(full)
-        team = p.get("team") or "FA"
-        pos = p.get("position", "")
-        status = p.get("status", "")
-        injury = p.get("injury_status")
-        nfl_lookup[norm] = {
-            "team": team, "pos": pos, "status": status, "injury": injury
+        nfl_lookup[normalize_name(full)] = {
+            "team":         p.get("team") or "FA",
+            "pos":          p.get("position", ""),
+            "status":       p.get("status", ""),
+            "injury":       p.get("injury_status"),
+            "injury_body":  p.get("injury_body_part"),
+            "injury_start": p.get("injury_start_date"),
+            "practice":     p.get("practice_participation"),
+            "dc_pos":       p.get("depth_chart_position"),
+            "dc_order":     p.get("depth_chart_order"),
         }
 
-    # Get all players from fantasy rosters
     lines = []
     seen = set()
     for team in fantasy_rosters:
@@ -140,19 +142,44 @@ def build_nfl_context(fantasy_rosters: list, rankings: dict) -> str:
                 continue
             seen.add(norm)
             nfl_info = nfl_lookup.get(norm)
-            if nfl_info:
-                injury_str = f" [{nfl_info['injury']}]" if nfl_info.get("injury") else ""
-                val = rankings.get(norm, {}).get("combined", 0)
-                if val > 1000:  # Only include relevant players
-                    lines.append(
-                        f"  {player['name']}({player['position']}) → {nfl_info['team']}{injury_str}"
-                    )
+            if not nfl_info:
+                continue
+            val = rankings.get(norm, {}).get("combined", 0)
+            if val <= 1000:
+                continue
+
+            # Depth chart: e.g. "DC:RB1" or "DC:WR3"
+            dc_str = ""
+            if nfl_info.get("dc_pos") and nfl_info.get("dc_order"):
+                dc_str = f" DC:{nfl_info['dc_pos']}{nfl_info['dc_order']}"
+
+            # Injury detail: e.g. " [Q knee 2026-04-12, LP]"
+            inj = nfl_info.get("injury")
+            inj_str = ""
+            if inj:
+                parts = [inj]
+                if nfl_info.get("injury_body"):
+                    parts.append(nfl_info["injury_body"].lower())
+                if nfl_info.get("injury_start"):
+                    parts.append(nfl_info["injury_start"])
+                if nfl_info.get("practice"):
+                    parts.append(nfl_info["practice"])
+                inj_str = f" [{' '.join(parts)}]"
+
+            lines.append(
+                f"  {player['name']}({player['position']}) → "
+                f"{nfl_info['team']}{dc_str}{inj_str}"
+            )
 
     if not lines:
         return ""
-
     lines.sort()
-    return "=== CURRENT NFL TEAMS (2026) ===\n" + "\n".join(lines)
+    return (
+        "=== CURRENT NFL TEAMS / DEPTH CHART / INJURIES (2026) ===\n"
+        "DC=depth chart slot (e.g. RB1, WR2). Practice codes: DNP/LP/FP. "
+        "Injury date is ISO format.\n"
+        + "\n".join(lines)
+    )
 
 
 # ── Sleeper stats & projections ───────────────────────────────────────────────
@@ -263,75 +290,88 @@ def build_enhanced_rankings(
     mode: str = "dynasty",
 ) -> dict:
     """
-    Blend KTC values with real production data to create enhanced rankings.
+    Blend market values with real production to create enhanced rankings.
 
-    Season mode:  40% KTC + 30% 2025 actual + 30% 2026 projected
-    Dynasty mode: 70% KTC + 15% 2025 actual + 15% 2026 projected
+    Both axes normalize to 0-9999. Per-game points are used (not season totals)
+    so injury-shortened seasons don't unfairly tank a player's value.
+
+    Season mode:  35% market + 15% 2025 per-game actual + 50% 2026 per-game proj
+    Dynasty mode: 65% market + 15% 2025 per-game actual + 20% 2026 per-game proj
+
+    "market" is the combined value coming in from base_rankings (i.e., the
+    average of KTC + FantasyCalc that fetch_all_rankings already produced).
 
     Returns a new rankings dict with blended 'combined' values.
     """
-    # Build Sleeper name→id map and fetch projections
     name_map = _build_sleeper_name_map()
     proj_data = fetch_sleeper_projections()
 
-    # Collect all production data points for normalization
-    all_fpts_2025 = []
-    all_proj_2026 = []
-    player_production = {}  # norm_name -> {fpts_2025, proj_2026}
+    # Collect per-game production data points for normalization
+    all_fpg_2025 = []
+    all_proj_pg_2026 = []
+    player_production = {}  # norm_name -> {fpg_2025, proj_pg_2026}
 
     for team in fantasy_rosters:
         for player in team.get("roster", []):
             norm = normalize_name(player["name"])
-            fpts = player.get("fpts_2025", 0) or 0
 
-            # Get 2026 projection — prefer ESPN (league-specific scoring), fall back to Sleeper
-            proj_pts = player.get("fpts_2026_proj", 0) or 0
-            if not proj_pts:
-                pid = name_map.get(norm)
-                if pid:
-                    p = proj_data.get(pid, {})
-                    proj_pts = p.get("pts_half_ppr", 0) or 0
+            # 2025 per-game actuals — prefer ESPN's appliedAverage, else fpts/games
+            fpg = player.get("fpts_2025_avg", 0) or 0
+            if not fpg:
+                total = player.get("fpts_2025", 0) or 0
+                gp = player.get("games_played", 0) or 0
+                fpg = round(total / gp, 1) if gp > 0 else 0
 
-            player_production[norm] = {
-                "fpts_2025": fpts,
-                "proj_2026": proj_pts,
-            }
-            if fpts > 0:
-                all_fpts_2025.append(fpts)
-            if proj_pts > 0:
-                all_proj_2026.append(proj_pts)
+            # 2026 per-game proj — prefer ESPN avg, else Sleeper total/17
+            proj_pg = player.get("fpts_2026_proj_avg", 0) or 0
+            if not proj_pg:
+                proj_total = player.get("fpts_2026_proj", 0) or 0
+                if proj_total:
+                    proj_pg = round(proj_total / 17, 1)  # full-season denom
+                else:
+                    pid = name_map.get(norm)
+                    if pid:
+                        p = proj_data.get(pid, {})
+                        proj_total = p.get("pts_half_ppr", 0) or 0
+                        if proj_total:
+                            proj_pg = round(proj_total / 17, 1)
 
-    # Find max values for normalization to 0-9999
-    max_fpts = max(all_fpts_2025) if all_fpts_2025 else 1
-    max_proj = max(all_proj_2026) if all_proj_2026 else 1
+            player_production[norm] = {"fpg_2025": fpg, "proj_pg_2026": proj_pg}
+            if fpg > 0:
+                all_fpg_2025.append(fpg)
+            if proj_pg > 0:
+                all_proj_pg_2026.append(proj_pg)
 
-    # Set blending weights by mode
+    max_fpg = max(all_fpg_2025) if all_fpg_2025 else 1
+    max_proj_pg = max(all_proj_pg_2026) if all_proj_pg_2026 else 1
+
     if mode == "season":
-        w_ktc, w_actual, w_proj = 0.35, 0.15, 0.50
+        w_market, w_actual, w_proj = 0.35, 0.15, 0.50
     else:  # dynasty
-        w_ktc, w_actual, w_proj = 0.65, 0.15, 0.20
+        w_market, w_actual, w_proj = 0.65, 0.15, 0.20
 
-    # Build enhanced rankings
     enhanced = {}
     for key, info in base_rankings.items():
         entry = dict(info)
-        ktc_val = info.get("combined", 0)
+        market_val = info.get("combined", 0)
 
         prod = player_production.get(key)
         if prod:
-            actual_norm = round(prod["fpts_2025"] / max_fpts * 9999) if max_fpts else 0
-            proj_norm = round(prod["proj_2026"] / max_proj * 9999) if max_proj else 0
+            actual_norm = round(prod["fpg_2025"] / max_fpg * 9999) if max_fpg else 0
+            proj_norm = round(prod["proj_pg_2026"] / max_proj_pg * 9999) if max_proj_pg else 0
 
             blended = round(
-                ktc_val * w_ktc
+                market_val * w_market
                 + actual_norm * w_actual
                 + proj_norm * w_proj
             )
             entry["combined"] = blended
-            entry["ktc_raw"] = ktc_val
-            entry["fpts_2025_norm"] = actual_norm
-            entry["proj_2026_norm"] = proj_norm
-        # else: keep original KTC-only value (player not on any roster)
+            entry["market_raw"] = market_val
+            entry["fpg_2025_norm"] = actual_norm
+            entry["proj_pg_2026_norm"] = proj_norm
+            entry["fpg_2025"] = prod["fpg_2025"]
+            entry["proj_pg_2026"] = prod["proj_pg_2026"]
+        # else: keep original market value (player not on any roster)
 
         enhanced[key] = entry
 
