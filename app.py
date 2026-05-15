@@ -1285,76 +1285,40 @@ def chat():
     except FileNotFoundError:
         strategy_brief = ""
 
-    system = f"""You are an expert dynasty fantasy football advisor for Jesse's 10-team Superflex league (0.5 PPR, NO TE premium). It is May 2026 — the 2026 NFL Draft has happened and rookies have landing spots. Be direct, reference specific players/values and landing-spot context, keep responses concise and actionable. Take Jesse's strategy brief seriously — agree when his reasoning is sound, push back specifically when the rankings/data contradict his convictions.
+    # ── Build STATIC portion (will be marked cache_control: ephemeral) ──
+    # This is everything that doesn't change between consecutive /chat calls
+    # within a 5-minute window. Anthropic prompt caching gives ~90% input
+    # discount on cache hits, so we keep this block as large and stable as
+    # possible.
+    try:
+        nfl_ctx = build_nfl_context(teams, rankings) or ""
+    except Exception:
+        nfl_ctx = ""
+    try:
+        prod_ctx = build_production_context(teams) or ""
+    except Exception:
+        prod_ctx = ""
 
-=== DATA SOURCES (be honest about confidence) ===
+    static_sections = [
+        "You are an expert dynasty fantasy football advisor for Jesse's 10-team Superflex league (0.5 PPR, NO TE premium). It is May 2026 — the 2026 NFL Draft has happened and rookies have landing spots. Be direct, reference specific players/values and landing-spot context, keep responses concise and actionable. Take Jesse's strategy brief seriously — agree when his reasoning is sound, push back specifically when the rankings/data contradict his convictions.",
+        """=== DATA SOURCES (be honest about confidence) ===
 Player values below are triangulated from THREE ranking sources with DraftSharks as the PRIMARY weight, then blended with production:
   - DraftSharks dynasty composite — PRIMARY (60% weight; 250 players, post-NFL-Draft, analyst-driven, 1/3/5/10yr projections)
   - KTC Superflex (20% weight; live, ~500 players, market-driven trade values)
   - FantasyCalc Superflex 10-team 0.5 PPR (20% weight; live API, crowd-sourced market)
 Plus Sleeper 2025 per-game actuals + 2026 per-game projections (half-PPR).
 
-When a player isn't in DraftSharks (rank > 250), the KTC+FC weights re-normalize to fill the gap. Each ranking row shows the source breakdown (KTC:X FC:Y DS:Z) so source disagreement is visible. The "BUY/SELL gap" block below compares DS to KTC+FC (DS is excluded from the "market" side of that comparison so the gap stays meaningful) — call out the methodology difference: KTC/FC are market prices, DraftSharks is analyst opinion with multi-year projections.
-
-=== DYNASTY RANKINGS (top 50, blended: 65% triangulated (DS-weighted) + 15% 2025 per-game + 20% 2026 per-game proj) ===
-{rankings_block}
-
-=== 2026 ROOKIES (post-draft, with NFL landing spots) ===
-{rookie_block}
-
-=== POWER RANKINGS (Dynasty + 2026 Season) ===
-{power_rankings_block}
-
-{buy_sell_block}
-
-{ds_notes_block}
-
-=== ROSTERS ===
-{league_summary}
-
-{draft_ctx}
-
-=== JESSE'S STRATEGY BRIEF ===
-{strategy_brief}"""
-
-    # Add current NFL roster context from Sleeper
-    try:
-        nfl_ctx = build_nfl_context(teams, rankings)
-        if nfl_ctx:
-            system += f"\n\n{nfl_ctx}"
-    except Exception:
-        pass
-
-    # Add player production data (2025 actual + 2026 projected)
-    try:
-        prod_ctx = build_production_context(teams)
-        if prod_ctx:
-            system += f"\n\n{prod_ctx}"
-    except Exception:
-        pass
-
-    if app_context:
-        system += f"\n\n=== LIVE APP STATE ===\n{app_context}"
-
-    # Inject prior conversation history + curated memories from Supabase
-    try:
-        prior_memories = memory_store.get_recent_memories(limit=100)
-        memories_block = memory_store.format_memories_block(prior_memories)
-        if memories_block:
-            system += f"\n\n{memories_block}"
-    except Exception:
-        pass
-    try:
-        prior_messages = memory_store.get_recent_messages(limit=50)
-        history_block = memory_store.format_messages_block(prior_messages, session_id)
-        if history_block:
-            system += f"\n\n{history_block}"
-    except Exception:
-        pass
-
-    system += """
-
-=== SAVING MEMORIES ===
+When a player isn't in DraftSharks (rank > 250), the KTC+FC weights re-normalize to fill the gap. Each ranking row shows the source breakdown (KTC:X FC:Y DS:Z) so source disagreement is visible. The "BUY/SELL gap" block below compares DS to KTC+FC (DS is excluded from the "market" side of that comparison so the gap stays meaningful) — call out the methodology difference: KTC/FC are market prices, DraftSharks is analyst opinion with multi-year projections.""",
+        f"=== DYNASTY RANKINGS (top 50, blended: 65% triangulated (DS-weighted) + 15% 2025 per-game + 20% 2026 per-game proj) ===\n{rankings_block}",
+        f"=== 2026 ROOKIES (post-draft, with NFL landing spots) ===\n{rookie_block}",
+        f"=== POWER RANKINGS (Dynasty + 2026 Season) ===\n{power_rankings_block}",
+        buy_sell_block,
+        ds_notes_block,
+        f"=== ROSTERS ===\n{league_summary}",
+        f"=== JESSE'S STRATEGY BRIEF ===\n{strategy_brief}" if strategy_brief else "",
+        nfl_ctx,
+        prod_ctx,
+        """=== SAVING MEMORIES ===
 You have a save_memory tool. Call it AGGRESSIVELY (without asking) whenever Jesse:
 - Expresses a strategic decision or stance ("I'm holding Conner until W10", "I won't trade Love")
 - Declines or accepts a trade with reasoning
@@ -1374,7 +1338,40 @@ You have web_search available with up to 10 uses per turn. Use it AGGRESSIVELY �
 
 When answering a player-specific question, search FIRST, then synthesize the dynasty-value implications using the rankings/rosters/production data in this prompt. Cite sources inline (e.g., "per ESPN") so the user can verify.
 
-Do NOT use a search for: pure trade-math questions (use the rankings/values in this prompt), questions Jesse already pasted into chat, or generic fantasy strategy that doesn't reference current events."""
+Do NOT use a search for: pure trade-math questions (use the rankings/values in this prompt), questions Jesse already pasted into chat, or generic fantasy strategy that doesn't reference current events.""",
+    ]
+    system_static = "\n\n".join(s for s in static_sections if s)
+
+    # ── Build DYNAMIC portion (NOT cached — changes per request) ──
+    dynamic_sections = []
+    if draft_ctx:
+        dynamic_sections.append(draft_ctx)
+    if app_context:
+        dynamic_sections.append(f"=== LIVE APP STATE ===\n{app_context}")
+    try:
+        prior_memories = memory_store.get_recent_memories(limit=100)
+        memories_block = memory_store.format_memories_block(prior_memories)
+        if memories_block:
+            dynamic_sections.append(memories_block)
+    except Exception:
+        pass
+    try:
+        prior_messages = memory_store.get_recent_messages(limit=50)
+        history_block = memory_store.format_messages_block(prior_messages, session_id)
+        if history_block:
+            dynamic_sections.append(history_block)
+    except Exception:
+        pass
+    system_dynamic = "\n\n".join(dynamic_sections) if dynamic_sections else ""
+
+    # System param as a list of content blocks — first block is marked
+    # cache_control:ephemeral so Anthropic caches it for ~5 minutes.
+    # On a cache hit, the cached portion costs ~10% of its normal input price.
+    system_blocks = [
+        {"type": "text", "text": system_static, "cache_control": {"type": "ephemeral"}}
+    ]
+    if system_dynamic:
+        system_blocks.append({"type": "text", "text": system_dynamic})
 
     # Web search tool (server-side, Anthropic handles execution) + save_memory (client-side)
     tools = [
@@ -1418,7 +1415,7 @@ Do NOT use a search for: pure trade-math questions (use the rankings/values in t
                         with client.messages.stream(
                             model=attempt_model,
                             max_tokens=4096,
-                            system=system,
+                            system=system_blocks,
                             messages=current_messages,
                             tools=tools,
                         ) as stream:
