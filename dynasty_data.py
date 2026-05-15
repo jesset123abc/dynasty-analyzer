@@ -546,6 +546,85 @@ def enrich_pick_label(pick: str) -> str:
     return base
 
 
+def build_draftsharks_notes_block(
+    rankings: dict,
+    player_names,
+    label: str = "DRAFTSHARKS ANALYST NOTES",
+    max_total_chars: int = 30000,
+    max_chars_per: int = 600,
+) -> str:
+    """
+    Build a prompt block containing DraftSharks written analysis for the given
+    player names (any iterable of raw or normalized names). Entries are sorted
+    by DS rank (best first). Total length is capped at max_total_chars.
+    Returns "" if none of the supplied players have analysis.
+    """
+    if not rankings or not player_names:
+        return ""
+
+    entries = []
+    seen = set()
+    for raw_name in player_names:
+        if not raw_name:
+            continue
+        nk = _normalize(raw_name)
+        if nk in seen:
+            continue
+        seen.add(nk)
+        info = rankings.get(nk)
+        if not info:
+            continue
+        analysis = (info.get("ds_analysis") or "").strip()
+        if not analysis:
+            continue
+        truncated = analysis[:max_chars_per].rstrip()
+        if len(analysis) > max_chars_per:
+            truncated += "…"
+        entries.append({
+            "name":      info.get("name") or raw_name,
+            "pos":       info.get("position") or "?",
+            "ds_rank":   info.get("ds_rank") or 9999,
+            "proj_1yr":  info.get("ds_proj_1yr") or 0,
+            "proj_3yr":  info.get("ds_proj_3yr") or 0,
+            "proj_5yr":  info.get("ds_proj_5yr") or 0,
+            "proj_10yr": info.get("ds_proj_10yr") or 0,
+            "analysis":  truncated,
+        })
+
+    if not entries:
+        return ""
+
+    entries.sort(key=lambda e: e["ds_rank"])
+
+    header = (
+        f"=== {label} ===\n"
+        "Verbatim DraftSharks analyst commentary. Quote selectively when "
+        "reasoning about these players to give specific, grounded justification. "
+        "Projections (1yr/3yr/5yr/10yr) are half-PPR fantasy points."
+    )
+    parts = [header]
+    total = len(header)
+    rendered = 0
+    for e in entries:
+        proj_str = ""
+        if e["proj_1yr"] or e["proj_3yr"]:
+            proj_str = (
+                f" | proj 1y/3y/5y/10y: {e['proj_1yr']:.0f}"
+                f"/{e['proj_3yr']:.0f}/{e['proj_5yr']:.0f}/{e['proj_10yr']:.0f}"
+            )
+        line = (
+            f"  {e['name']}({e['pos']}, DS #{e['ds_rank']}{proj_str}):\n"
+            f"    \"{e['analysis']}\""
+        )
+        if total + len(line) + 1 > max_total_chars:
+            parts.append(f"  ... ({len(entries) - rendered} additional players omitted to keep context manageable)")
+            break
+        parts.append(line)
+        total += len(line) + 1
+        rendered += 1
+    return "\n".join(parts)
+
+
 def build_rankings_summary(rankings: dict, limit: int = 40) -> str:
     """
     Top-N dynasty values to inject into the Claude prompt.

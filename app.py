@@ -5,7 +5,7 @@ import anthropic
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from dotenv import load_dotenv
 from espn_data import fetch_league_data, parse_league, build_league_prompt
-from dynasty_data import fetch_all_rankings, build_rankings_summary, normalize_name, PICK_VALUES
+from dynasty_data import fetch_all_rankings, build_rankings_summary, build_draftsharks_notes_block, normalize_name, PICK_VALUES
 from rookies_data import ROOKIES_2026
 from power_rankings import compute_power_rankings
 from trade_impact import compute_trade_impact, compute_draft_impact, find_partner_team_id
@@ -340,6 +340,10 @@ def analyze():
     rankings = fetch_all_rankings()
     league_summary = build_league_prompt(teams, my_team_id, rankings)
     rankings_block = build_rankings_summary(rankings)
+    ds_notes_block = build_draftsharks_notes_block(
+        rankings,
+        [p["name"] for t in teams for p in t.get("roster", [])],
+    )
 
     prompt = f"""You are an expert dynasty fantasy football trade analyst. It is March 2026, immediately after the 2025 NFL season ended.
 
@@ -361,8 +365,10 @@ Pick values are KTC-calibrated.
 
 {style["value_rule"]}
 
-=== CURRENT DYNASTY RANKINGS (March 2026 — combined from KTC + Dynasty Daddy + FantasyCalc) ===
+=== CURRENT DYNASTY RANKINGS (March 2026 — weighted DraftSharks (60%) + KTC (20%) + FantasyCalc (20%)) ===
 {rankings_block}
+
+{ds_notes_block}
 
 === FULL LEAGUE ROSTERS ===
 Players are annotated: Name (VAL:combined-value #overall-rank POS | Age X). Picks annotated with KTC value and known 2026 draft slot.
@@ -517,6 +523,13 @@ def recommend_pick():
         for i, p in enumerate(available[:20])
     )
 
+    rankings = fetch_all_rankings()
+    ds_notes_block = build_draftsharks_notes_block(
+        rankings,
+        [p["name"] for p in available[:20]]
+        + [p["name"] for p in my_team.get("roster", [])],
+    )
+
     pick_context = {
         1:  "This is Jesse's 1.01 (first overall). Jeremiyah Love is the consensus #1 dynasty prospect (Combined Value ~7100). If Love is still available, this is essentially locked. Only discuss alternatives if Love is off the board.",
         3:  "This is Jesse's 1.03 (Alex's pick). Note: Fernando Mendoza (QB, Indiana, Combined Value ~5600) is the #2 dynasty asset in this class in Superflex leagues — higher than the WRs. Jesse's stated plan is to take a WR here, but Mendoza would directly solve his long-term QB vulnerability (Purdy is his only QB1). If Mendoza is available, flag this as a genuine decision point. Otherwise, the target is the top WR available — Carnell Tate (~5335) or Makai Lemon (~5182) or Jordyn Tyson (~4830).",
@@ -540,6 +553,8 @@ Jesse is making pick {pick_number}. {pick_context.get(pick_number, "Best player 
 === AVAILABLE PLAYERS (top 20 remaining on board) ===
 Values shown are pre-draft KTC estimates — use as relative tier guides.
 {avail_str}
+
+{ds_notes_block}
 
 Give Jesse a clear, direct recommendation for this pick. Name the specific player he should take and explain why in 2-3 sentences, referencing dynasty values and his roster needs. If there's a close call between 2 players, address it.
 
@@ -688,6 +703,11 @@ def draft_day():
     rankings = fetch_all_rankings()
     league_summary = build_league_prompt(teams, my_team_id, rankings)
     rankings_block = build_rankings_summary(rankings)
+    ds_notes_block = build_draftsharks_notes_block(
+        rankings,
+        [p["name"] for t in teams for p in t.get("roster", [])]
+        + [r["name"] for r in ROOKIES_2026],
+    )
 
     # ── Parse live draft board ─────────────────────────────────────────────────
     draft_ctx = _build_draft_context(draft_state)
@@ -801,8 +821,10 @@ Use the Combined Value rankings as relative tier guides, but build trades around
 {draft_ctx_section}
 {style["value_rule"]}
 
-=== CURRENT DYNASTY RANKINGS (KTC + Dynasty Daddy + FantasyCalc combined) ===
+=== CURRENT DYNASTY RANKINGS (weighted DraftSharks (60%) + KTC (20%) + FantasyCalc (20%)) ===
 {rankings_block}
+
+{ds_notes_block}
 
 === FULL LEAGUE ROSTERS ===
 {league_summary}
@@ -903,6 +925,10 @@ def evaluate_offer():
     rankings = fetch_all_rankings()
     league_summary = build_league_prompt(teams, my_team_id, rankings)
     rankings_block = build_rankings_summary(rankings)
+    ds_notes_block = build_draftsharks_notes_block(
+        rankings,
+        [p["name"] for t in teams for p in t.get("roster", [])],
+    )
 
     prompt = f"""You are an expert dynasty fantasy football trade analyst evaluating an incoming offer on 2026 NFL draft day.
 
@@ -916,8 +942,10 @@ Superflex (OP slot), NO TE premium, 0.5 PPR, 10 teams.
 - 1.10 (Patrick's pick, held by Jesse) = KTC 3000
 - Jesse's QB1: Brock Purdy — must not be left without a QB1 in Superflex
 
-=== CURRENT DYNASTY RANKINGS (KTC + Dynasty Daddy + FantasyCalc combined) ===
+=== CURRENT DYNASTY RANKINGS (weighted DraftSharks (60%) + KTC (20%) + FantasyCalc (20%)) ===
 {rankings_block}
+
+{ds_notes_block}
 
 === FULL LEAGUE ROSTERS ===
 {league_summary}
@@ -1134,6 +1162,13 @@ def chat():
     # BUY/SELL gap between DraftSharks rank and KTC+FC market rank
     buy_sell_block = _build_advisor_buy_sell_block(rankings, teams, team_id)
 
+    # DraftSharks written analyst notes for rostered players + 2026 rookies
+    ds_notes_block = build_draftsharks_notes_block(
+        rankings,
+        [p["name"] for t in teams for p in t.get("roster", [])]
+        + [r["name"] for r in ROOKIES_2026],
+    )
+
     # Build compact league rosters — starters + notable bench only
     roster_lines = []
     for team in teams:
@@ -1271,6 +1306,8 @@ When a player isn't in DraftSharks (rank > 250), the KTC+FC weights re-normalize
 {power_rankings_block}
 
 {buy_sell_block}
+
+{ds_notes_block}
 
 === ROSTERS ===
 {league_summary}
