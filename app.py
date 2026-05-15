@@ -1152,7 +1152,14 @@ def chat():
         rookie_lines.append(f"  #{r['rank']}. {r['name']}({r['pos']}→{r['nfl_team']}) V:{val} {r['notes']}")
     rookie_block = "\n".join(rookie_lines)
 
-    system = f"""You are an expert dynasty fantasy football advisor for Jesse's 10-team Superflex league (0.5 PPR, NO TE premium). It is May 2026 — the 2026 NFL Draft has happened and rookies have landing spots. Be direct, reference specific players/values and landing-spot context, keep responses concise and actionable.
+    # Load Jesse's strategy brief (editable without code changes)
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "strategy_brief.md")) as f:
+            strategy_brief = f.read()
+    except FileNotFoundError:
+        strategy_brief = ""
+
+    system = f"""You are an expert dynasty fantasy football advisor for Jesse's 10-team Superflex league (0.5 PPR, NO TE premium). It is May 2026 — the 2026 NFL Draft has happened and rookies have landing spots. Be direct, reference specific players/values and landing-spot context, keep responses concise and actionable. Take Jesse's strategy brief seriously — agree when his reasoning is sound, push back specifically when the rankings/data contradict his convictions.
 
 === DYNASTY RANKINGS (top 40, combined KTC+DynastyDaddy+FantasyCalc, 0-9999) ===
 {rankings_block}
@@ -1168,12 +1175,8 @@ def chat():
 
 {draft_ctx}
 
-=== JESSE'S SITUATION ===
-{my_team['name']} | {my_team['wins']}-{my_team['losses']}
-Key: 1.01(~7100,→Love), 1.03(Alex's,~5400,→Tate/Tyson), 1.10(Patrick's,~3000), 2027 1sts(own+Driscoll's)
-Core: Judkins(RB,22), Burden(WR,22), Olave(WR,25), Addison(WR,24)
-QB: Purdy only — Superflex vulnerability
-Rules: Never trade away only QB; 1.01/1.03 need top-15 return; 2027 1sts tradeable for QB"""
+=== JESSE'S STRATEGY BRIEF ===
+{strategy_brief}"""
 
     # Add current NFL roster context from Sleeper
     try:
