@@ -1,11 +1,15 @@
 """
-Fetches dynasty player values from KeepTradeCut (KTC) + FantasyCalc (FC).
-
-Two sources are triangulated:
-- KTC Superflex (scraped from JS on keeptradecut.com/dynasty-rankings)
+Fetches dynasty player values from three sources:
+- KTC Superflex (live scrape of keeptradecut.com/dynasty-rankings)
 - FantasyCalc Superflex 10-team 0.5 PPR (free JSON API)
+- DraftSharks dynasty composite (CSV, refreshed manually)
 
-Both are normalized to 0-9999 and averaged into a "combined" value.
+All three are normalized to a 0-9999 scale and averaged into "combined"
+(only sources that have the player contribute).
+
+For each player we also expose "market_combined" — the KTC+FC-only average,
+used by the BUY/SELL gap signal where mixing DS into the market would
+defeat the point of comparing DS vs market.
 
 Also exposes:
 - KTC rookie-only rankings (live), used to refresh ROOKIES_2026 values
@@ -14,6 +18,8 @@ Also exposes:
 
 Results are cached for 15 minutes.
 """
+import os
+import csv
 import re
 import json
 import time
@@ -29,6 +35,7 @@ FANTASYCALC_URL = (
     "https://api.fantasycalc.com/values/current"
     "?isDynasty=true&numQbs=2&numTeams=10&ppr=0.5"
 )
+DRAFTSHARKS_FILE = os.path.join(os.path.dirname(__file__), "ofantasy_rankings.csv")
 
 _HEADERS = {
     "User-Agent": (
@@ -246,6 +253,51 @@ def _fetch_fantasycalc() -> dict:
     return result
 
 
+# ── DraftSharks fetcher ───────────────────────────────────────────────────────
+
+def _to_float(s) -> float:
+    try:
+        return float((s or "").strip())
+    except (ValueError, TypeError, AttributeError):
+        return 0.0
+
+
+def _fetch_draftsharks() -> dict:
+    """
+    Load DraftSharks dynasty rankings from local CSV (manually refreshed).
+    Returns {norm_name: {ds_rank, ds_pos, ds_team, ds_proj_1yr, ds_proj_3yr,
+                          ds_proj_5yr, ds_proj_10yr, ds_analysis}}
+    """
+    if not os.path.exists(DRAFTSHARKS_FILE):
+        return {}
+    result: dict = {}
+    try:
+        with open(DRAFTSHARKS_FILE, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                name = (row.get("Player") or "").strip()
+                if not name:
+                    continue
+                try:
+                    rank = int(row.get("Rank", 0))
+                except (ValueError, TypeError):
+                    continue
+                result[_normalize(name)] = {
+                    "ds_name":      name,
+                    "ds_rank":      rank,
+                    "ds_pos":       (row.get("Fantsy Position") or "").strip(),
+                    "ds_team":      (row.get("Team") or "").strip(),
+                    "ds_proj_1yr":  _to_float(row.get("1yr. Proj")),
+                    "ds_proj_3yr":  _to_float(row.get("3yr. Proj")),
+                    "ds_proj_5yr":  _to_float(row.get("5yr. Proj")),
+                    "ds_proj_10yr": _to_float(row.get("10yr. Proj")),
+                    "ds_analysis": (row.get("DS Analysis") or "").strip(),
+                }
+    except Exception:
+        return {}
+    return result
+
+
 # ── KTC rookies (separate page) ───────────────────────────────────────────────
 
 def _fetch_ktc_rookies() -> dict:
@@ -309,26 +361,41 @@ def fetch_pick_market() -> dict:
 
 def fetch_all_rankings() -> dict:
     """
-    Fetch KTC + FantasyCalc Superflex dynasty values and average them.
+    Triangulate KTC + FantasyCalc + DraftSharks Superflex dynasty values.
 
-    Both sources normalize to 0-9999. "combined" is the average of available
-    source values (KTC-only if FC misses, vice versa).
+    Each source is normalized to 0-9999. DraftSharks publishes ranks only
+    (not values), so we map each DS rank to the value sitting at that rank
+    in KTC's sorted value distribution — preserving the shape of the
+    market-driven value curve while letting DS contribute its rank opinion.
+
+    Two combined values are produced:
+      - combined:        avg(KTC, FC, DS) where source has the player
+      - market_combined: avg(KTC, FC) — pure market, used by BUY/SELL gap
 
     Returns dict keyed by normalized player name:
       {
-        "name":         str,
-        "combined":     int,    # avg of available sources (0-9999)
-        "ktc":          int,    # KTC value or 0
-        "fc":           int,    # FantasyCalc value or 0
-        "sources":      list,   # which sources had this player ['ktc', 'fc']
-        "rank":         int,    # overall rank by combined
-        "pos_rank":     int,    # positional rank by combined
-        "ktc_rank":     int,    # rank within KTC only
-        "fc_rank":      int,    # rank within FantasyCalc only
-        "fc_trend_30d": int,    # FC 30-day trend (signed)
-        "age":          float,
-        "position":     str,
-        "sleeper_id":   str|None,
+        "name":            str,
+        "combined":        int,    # avg of available sources (0-9999)
+        "market_combined": int,    # KTC+FC only (excludes DS)
+        "ktc":             int,
+        "fc":              int,
+        "ds":              int,    # DS-rank mapped onto KTC value scale
+        "ds_rank":         int,    # DraftSharks rank (1-N, lower=better)
+        "ds_proj_1yr":     float,  # DS 1-year half-PPR projection
+        "ds_proj_3yr":     float,
+        "ds_proj_5yr":     float,
+        "ds_proj_10yr":    float,
+        "ds_analysis":     str,    # DS written analysis (may be long)
+        "sources":         list,   # ['ktc', 'fc', 'ds'] subset
+        "rank":            int,    # overall rank by combined
+        "market_rank":     int,    # overall rank by market_combined
+        "pos_rank":        int,
+        "ktc_rank":        int,
+        "fc_rank":         int,
+        "fc_trend_30d":    int,
+        "age":             float,
+        "position":        str,
+        "sleeper_id":      str|None,
       }
     """
     global _cache
@@ -338,45 +405,80 @@ def fetch_all_rankings() -> dict:
 
     ktc_players, _picks = _fetch_ktc()
     fc_players = _fetch_fantasycalc()
+    ds_players = _fetch_draftsharks()
 
-    # Union of keys across sources
-    all_keys = set(ktc_players.keys()) | set(fc_players.keys())
+    # Build a sorted KTC value list so we can map DS ranks onto the KTC value scale
+    ktc_values_sorted = sorted(
+        [p.get("ktc", 0) for p in ktc_players.values() if p.get("ktc", 0) > 0],
+        reverse=True,
+    )
+
+    def _ds_rank_to_value(rank: int) -> int:
+        if rank < 1 or not ktc_values_sorted:
+            return 0
+        idx = min(rank - 1, len(ktc_values_sorted) - 1)
+        return ktc_values_sorted[idx]
+
+    all_keys = set(ktc_players) | set(fc_players) | set(ds_players)
 
     result: dict = {}
     for key in all_keys:
         k = ktc_players.get(key, {})
         f = fc_players.get(key, {})
+        d = ds_players.get(key, {})
 
-        # Average available source values (skip zeros)
-        vals = [v for v in (k.get("ktc", 0), f.get("fc", 0)) if v > 0]
-        combined = round(sum(vals) / len(vals)) if vals else 0
+        ktc_v = k.get("ktc", 0)
+        fc_v = f.get("fc", 0)
+        ds_rank = d.get("ds_rank", 0) if d else 0
+        ds_v = _ds_rank_to_value(ds_rank) if ds_rank else 0
+
+        market_vals = [v for v in (ktc_v, fc_v) if v > 0]
+        market_combined = round(sum(market_vals) / len(market_vals)) if market_vals else 0
+
+        all_vals = [v for v in (ktc_v, fc_v, ds_v) if v > 0]
+        combined = round(sum(all_vals) / len(all_vals)) if all_vals else 0
+
         sources = []
-        if k.get("ktc", 0) > 0: sources.append("ktc")
-        if f.get("fc", 0) > 0:  sources.append("fc")
+        if ktc_v > 0: sources.append("ktc")
+        if fc_v > 0:  sources.append("fc")
+        if ds_v > 0:  sources.append("ds")
 
         result[key] = {
-            "name":         k.get("name") or key.title(),
-            "combined":     combined,
-            "ktc":          k.get("ktc", 0),
-            "fc":           f.get("fc", 0),
-            "sources":      sources,
-            "ktc_rank":     k.get("ktc_rank", 999),
-            "fc_rank":      f.get("fc_rank", 999),
-            "fc_trend_30d": f.get("fc_trend_30d", 0),
-            "age":          k.get("age") or 0,
-            "position":     k.get("position", ""),
-            "sleeper_id":   f.get("sleeper_id"),
+            "name":            k.get("name") or (d.get("ds_name") if d else None) or key.title(),
+            "combined":        combined,
+            "market_combined": market_combined,
+            "ktc":             ktc_v,
+            "fc":              fc_v,
+            "ds":              ds_v,
+            "ds_rank":         ds_rank,
+            "ds_proj_1yr":     d.get("ds_proj_1yr", 0) if d else 0,
+            "ds_proj_3yr":     d.get("ds_proj_3yr", 0) if d else 0,
+            "ds_proj_5yr":     d.get("ds_proj_5yr", 0) if d else 0,
+            "ds_proj_10yr":    d.get("ds_proj_10yr", 0) if d else 0,
+            "ds_analysis":     d.get("ds_analysis", "") if d else "",
+            "sources":         sources,
+            "ktc_rank":        k.get("ktc_rank", 999),
+            "fc_rank":         f.get("fc_rank", 999),
+            "fc_trend_30d":    f.get("fc_trend_30d", 0),
+            "age":             k.get("age") or 0,
+            "position":        k.get("position", "") or (d.get("ds_pos", "") if d else ""),
+            "sleeper_id":      f.get("sleeper_id"),
         }
 
-    # Re-rank by combined score and assign positional ranks
-    sorted_players = sorted(result.items(), key=lambda x: x[1]["combined"], reverse=True)
+    # Re-rank by combined (3-source) and assign positional ranks
+    sorted_combined = sorted(result.items(), key=lambda x: x[1]["combined"], reverse=True)
     pos_counters: dict[str, int] = {}
-    for new_rank, (key, info) in enumerate(sorted_players, 1):
+    for new_rank, (key, info) in enumerate(sorted_combined, 1):
         result[key]["rank"] = new_rank
         pos = info["position"]
         if pos:
             pos_counters[pos] = pos_counters.get(pos, 0) + 1
             result[key]["pos_rank"] = pos_counters[pos]
+
+    # Independent rank by market_combined (KTC+FC only) for BUY/SELL gap calcs
+    sorted_market = sorted(result.items(), key=lambda x: x[1]["market_combined"], reverse=True)
+    for new_rank, (key, _) in enumerate(sorted_market, 1):
+        result[key]["market_rank"] = new_rank
 
     _cache["data"] = result
     _cache["ts"] = now
@@ -426,8 +528,8 @@ def enrich_pick_label(pick: str) -> str:
 def build_rankings_summary(rankings: dict, limit: int = 40) -> str:
     """
     Top-N dynasty values to inject into the Claude prompt.
-    Shows the combined value plus the per-source breakdown (KTC, FC) so the
-    model can see source agreement/disagreement at a glance.
+    Shows the combined value plus the per-source breakdown (KTC, FC, DS) so
+    the model can see source agreement/disagreement at a glance.
     """
     if not rankings:
         return "(Rankings unavailable — falling back to positional reasoning)"
@@ -440,8 +542,9 @@ def build_rankings_summary(rankings: dict, limit: int = 40) -> str:
 
     header = (
         f"TOP {limit} DYNASTY VALUES — combined avg of KTC Superflex + FantasyCalc "
-        "SF 10-team 0.5PPR (each 0-9999). KTC/FC columns show source disagreement; "
-        "trend30d is FC 30-day movement (positive = rising)."
+        "SF 10-team 0.5PPR + DraftSharks dynasty composite (each 0-9999). "
+        "KTC/FC/DS columns show source disagreement; trend30d is FC 30-day "
+        "movement (positive = rising); dsR is DraftSharks rank."
     )
 
     lines = [header]
@@ -449,13 +552,16 @@ def build_rankings_summary(rankings: dict, limit: int = 40) -> str:
         age_str = f", age {info['age']:.0f}" if info.get("age") else ""
         ktc = info.get("ktc", 0)
         fc = info.get("fc", 0)
+        ds = info.get("ds", 0)
+        ds_rank = info.get("ds_rank", 0)
         trend = info.get("fc_trend_30d", 0)
         trend_str = f" trend30d:{trend:+d}" if trend else ""
+        ds_str = f" DS:{ds}(R{ds_rank})" if ds_rank else " DS:—"
         sources = info.get("sources", [])
-        src_warn = "" if len(sources) == 2 else f" [src:{','.join(sources) or 'none'}]"
+        src_warn = "" if len(sources) == 3 else f" [src:{','.join(sources) or 'none'}]"
         lines.append(
             f"  VAL:{info['combined']:>5}  #{info.get('rank', 999):>3} {info['position']:<3}  "
             f"{name_key.title()}{age_str}  "
-            f"(KTC:{ktc} FC:{fc}{trend_str}{src_warn})"
+            f"(KTC:{ktc} FC:{fc}{ds_str}{trend_str}{src_warn})"
         )
     return "\n".join(lines)

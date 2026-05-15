@@ -1004,23 +1004,26 @@ def advisor():
     return render_template("advisor.html", teams=teams, my_team_id=my_team_id)
 
 
-def _build_advisor_buy_sell_block(rankings: dict, experts: dict, teams: list, my_team_id: int) -> str:
+def _build_advisor_buy_sell_block(rankings: dict, teams: list, my_team_id: int) -> str:
     """
-    Identify largest BUY/SELL gaps between DraftSharks expert ranks and the
-    KTC+FC market for rostered players. Both axes are percentile-normalized so
+    Identify largest BUY/SELL gaps between DraftSharks rank and the KTC+FC
+    market rank for rostered players. Both axes are percentile-normalized so
     a positive 'gap' means DS values higher than market (BUY candidate).
+    Uses market_rank (KTC+FC only, excludes DS) to keep the gap clean.
     """
-    if not experts or not rankings:
+    if not rankings:
         return ""
 
-    # Count rankings that have a real market value for percentile calc
-    market_total = sum(1 for r in rankings.values() if r.get("combined", 0) > 0)
-    if market_total < 5:
+    market_total = sum(1 for r in rankings.values() if r.get("market_combined", 0) > 0)
+    ds_total = sum(1 for r in rankings.values() if r.get("ds_rank", 0) > 0)
+    if market_total < 5 or ds_total < 5:
         return ""
 
     def to_pct(rank, total):
-        if total <= 1:
-            return 100.0
+        if not rank or rank < 1 or total <= 1:
+            return 0.0
+        if rank > total:
+            return 0.0
         return round(100 * (1 - (rank - 1) / (total - 1)), 1)
 
     buys, sells = [], []
@@ -1029,31 +1032,29 @@ def _build_advisor_buy_sell_block(rankings: dict, experts: dict, teams: list, my
         first = team["owner"].split()[0]
         owner = OWNER_DISPLAY.get(first, first)
         for p in team["roster"]:
-            nkey = normalize_name(p["name"])
-            r = rankings.get(nkey, {})
-            exp = experts.get(nkey)
-            if not exp or p.get("position") not in ("QB", "RB", "WR", "TE"):
+            if p.get("position") not in ("QB", "RB", "WR", "TE"):
                 continue
-            market_rank = r.get("rank", 999)
-            if market_rank >= 999:
+            r = rankings.get(normalize_name(p["name"]), {})
+            mkt_rank = r.get("market_rank", 999)
+            ds_rank = r.get("ds_rank", 0)
+            if mkt_rank >= 999 or ds_rank < 1:
                 continue
-            market_pct = to_pct(market_rank, market_total)
-            ds_pct = exp.get("expert_score", 0)
-            if market_pct < 3 and ds_pct < 3:
+            mkt_pct = to_pct(mkt_rank, market_total)
+            ds_pct = to_pct(ds_rank, ds_total)
+            if mkt_pct < 3 and ds_pct < 3:
                 continue
-            gap = round(ds_pct - market_pct, 1)
-            if abs(gap) < 5:  # only meaningful gaps
+            gap = round(ds_pct - mkt_pct, 1)
+            if abs(gap) < 5:
                 continue
-            entry = {
-                "name":   p["name"],
-                "pos":    p["position"],
-                "owner":  "Jesse" if is_mine else owner,
-                "ds_pct": ds_pct,
-                "mkt_pct": market_pct,
-                "gap":    gap,
-                "mine":   is_mine,
-            }
-            (buys if gap > 0 else sells).append(entry)
+            (buys if gap > 0 else sells).append({
+                "name":    p["name"],
+                "pos":     p["position"],
+                "owner":   "Jesse" if is_mine else owner,
+                "ds_pct":  ds_pct,
+                "mkt_pct": mkt_pct,
+                "gap":     gap,
+                "mine":    is_mine,
+            })
 
     buys.sort(key=lambda x: -x["gap"])
     sells.sort(key=lambda x: x["gap"])
@@ -1074,9 +1075,10 @@ def _build_advisor_buy_sell_block(rankings: dict, experts: dict, teams: list, my
 
     parts = ["=== DRAFTSHARKS EXPERT vs MARKET — TOP GAPS ==="]
     parts.append(
-        "Percentile-scaled (100=best). DS=DraftSharks expert composite, "
-        "Mkt=KTC+FantasyCalc average. Positive gap = DS thinks player worth "
-        "more than market (BUY signal). Negative gap = market overvaluing (SELL signal)."
+        "Percentile-scaled (100=best). DS=DraftSharks rank, "
+        "Mkt=KTC+FantasyCalc rank (DS excluded so gap stays clean). "
+        "Positive gap = DS values higher than market (BUY signal). "
+        "Negative gap = market values higher than DS (SELL signal)."
     )
     buys_block = _fmt(buys, "BUY candidates (DS > Mkt)")
     sells_block = _fmt(sells, "SELL candidates (Mkt > DS)")
@@ -1129,9 +1131,8 @@ def chat():
     pr_season = compute_power_rankings(teams, season_r, mode="season", apply_draft_state=True)
     power_rankings_block = _format_pr(pr_dynasty, "Dynasty (long-term)") + "\n" + _format_pr(pr_season, "2026 Season (win-now)")
 
-    # DraftSharks expert ranks (separate methodology) — surface BUY/SELL gaps
-    experts = _load_expert_scores()
-    buy_sell_block = _build_advisor_buy_sell_block(rankings, experts, teams, team_id)
+    # BUY/SELL gap between DraftSharks rank and KTC+FC market rank
+    buy_sell_block = _build_advisor_buy_sell_block(rankings, teams, team_id)
 
     # Build compact league rosters — starters + notable bench only
     roster_lines = []
@@ -1252,14 +1253,15 @@ def chat():
     system = f"""You are an expert dynasty fantasy football advisor for Jesse's 10-team Superflex league (0.5 PPR, NO TE premium). It is May 2026 — the 2026 NFL Draft has happened and rookies have landing spots. Be direct, reference specific players/values and landing-spot context, keep responses concise and actionable. Take Jesse's strategy brief seriously — agree when his reasoning is sound, push back specifically when the rankings/data contradict his convictions.
 
 === DATA SOURCES (be honest about confidence) ===
-Player values below are blended from:
-  - KTC Superflex (live scrape, ~500 players, market-driven trade values)
+Player values below are triangulated from THREE ranking sources, then blended with production:
+  - KTC Superflex (live, ~500 players, market-driven trade values)
   - FantasyCalc Superflex 10-team 0.5 PPR (live API, crowd-sourced market)
-  - DraftSharks expert dynasty composite (CSV, ~870 players, analyst-driven)
-  - Sleeper 2025 per-game actuals + 2026 per-game projections (half-PPR)
-Where multiple sources agree, confidence is high. Where they disagree (the "BUY/SELL gap" block below), flag the disagreement and explain the methodology difference — KTC/FC are market prices, DraftSharks is analyst opinion.
+  - DraftSharks dynasty composite (250 players, post-NFL-Draft, analyst-driven)
+Plus Sleeper 2025 per-game actuals + 2026 per-game projections (half-PPR).
 
-=== DYNASTY RANKINGS (top 50, blended: 65% market + 15% 2025 per-game + 20% 2026 per-game proj) ===
+Each ranking row shows the source breakdown (KTC:X FC:Y DS:Z) so source disagreement is visible. Where all three agree, confidence is high. Where DraftSharks diverges from KTC+FC (the "BUY/SELL gap" block below uses ONLY DS vs KTC+FC, so the gap is meaningful), call out the methodology difference — KTC/FC are market prices, DraftSharks is analyst opinion with projections out to 10 years.
+
+=== DYNASTY RANKINGS (top 50, blended: 65% triangulated market + 15% 2025 per-game + 20% 2026 per-game proj) ===
 {rankings_block}
 
 === 2026 ROOKIES (post-draft, with NFL landing spots) ===
@@ -1923,8 +1925,8 @@ def buy_sell_page():
         my_team_id = int(request.args.get("team_id", 8))
         threshold = float(request.args.get("threshold", 8))  # min score gap (0-100 scale)
 
-        # Count total KTC-ranked players for percentile calculation
-        ktc_total = sum(1 for r in rankings.values() if r.get("combined", 0) > 0)
+        # Count total market-ranked players for percentile calc (excludes DS bias)
+        ktc_total = sum(1 for r in rankings.values() if r.get("market_combined", 0) > 0)
 
         buy_signals = []
         sell_signals = []
@@ -1938,7 +1940,7 @@ def buy_sell_page():
                 nkey = normalize_name(p["name"])
                 r = rankings.get(nkey, {})
                 exp = experts.get(nkey)
-                ktc_val = r.get("combined", 0)
+                ktc_val = r.get("market_combined") or r.get("combined", 0)
                 pos = p.get("position", "")
                 age = r.get("age", 0)
 
@@ -1947,8 +1949,8 @@ def buy_sell_page():
                 if ktc_val < 100:
                     continue
 
-                # Normalize KTC to percentile (same basis as expert scores)
-                ktc_rank = r.get("rank", 999)
+                # Use market_rank (KTC+FC only) so DS isn't on both sides of the gap
+                ktc_rank = r.get("market_rank") or r.get("rank", 999)
                 if ktc_rank >= 999:
                     continue
                 ktc_score = _rank_to_percentile(ktc_rank, ktc_total)
