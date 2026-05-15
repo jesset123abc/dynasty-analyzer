@@ -1253,15 +1253,15 @@ def chat():
     system = f"""You are an expert dynasty fantasy football advisor for Jesse's 10-team Superflex league (0.5 PPR, NO TE premium). It is May 2026 — the 2026 NFL Draft has happened and rookies have landing spots. Be direct, reference specific players/values and landing-spot context, keep responses concise and actionable. Take Jesse's strategy brief seriously — agree when his reasoning is sound, push back specifically when the rankings/data contradict his convictions.
 
 === DATA SOURCES (be honest about confidence) ===
-Player values below are triangulated from THREE ranking sources, then blended with production:
-  - KTC Superflex (live, ~500 players, market-driven trade values)
-  - FantasyCalc Superflex 10-team 0.5 PPR (live API, crowd-sourced market)
-  - DraftSharks dynasty composite (250 players, post-NFL-Draft, analyst-driven)
+Player values below are triangulated from THREE ranking sources with DraftSharks as the PRIMARY weight, then blended with production:
+  - DraftSharks dynasty composite — PRIMARY (60% weight; 250 players, post-NFL-Draft, analyst-driven, 1/3/5/10yr projections)
+  - KTC Superflex (20% weight; live, ~500 players, market-driven trade values)
+  - FantasyCalc Superflex 10-team 0.5 PPR (20% weight; live API, crowd-sourced market)
 Plus Sleeper 2025 per-game actuals + 2026 per-game projections (half-PPR).
 
-Each ranking row shows the source breakdown (KTC:X FC:Y DS:Z) so source disagreement is visible. Where all three agree, confidence is high. Where DraftSharks diverges from KTC+FC (the "BUY/SELL gap" block below uses ONLY DS vs KTC+FC, so the gap is meaningful), call out the methodology difference — KTC/FC are market prices, DraftSharks is analyst opinion with projections out to 10 years.
+When a player isn't in DraftSharks (rank > 250), the KTC+FC weights re-normalize to fill the gap. Each ranking row shows the source breakdown (KTC:X FC:Y DS:Z) so source disagreement is visible. The "BUY/SELL gap" block below compares DS to KTC+FC (DS is excluded from the "market" side of that comparison so the gap stays meaningful) — call out the methodology difference: KTC/FC are market prices, DraftSharks is analyst opinion with multi-year projections.
 
-=== DYNASTY RANKINGS (top 50, blended: 65% triangulated market + 15% 2025 per-game + 20% 2026 per-game proj) ===
+=== DYNASTY RANKINGS (top 50, blended: 65% triangulated (DS-weighted) + 15% 2025 per-game + 20% 2026 per-game proj) ===
 {rankings_block}
 
 === 2026 ROOKIES (post-draft, with NFL landing spots) ===

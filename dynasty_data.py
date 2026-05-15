@@ -2,10 +2,13 @@
 Fetches dynasty player values from three sources:
 - KTC Superflex (live scrape of keeptradecut.com/dynasty-rankings)
 - FantasyCalc Superflex 10-team 0.5 PPR (free JSON API)
-- DraftSharks dynasty composite (CSV, refreshed manually)
+- DraftSharks dynasty composite (CSV, refreshed manually) — PRIMARY
 
-All three are normalized to a 0-9999 scale and averaged into "combined"
-(only sources that have the player contribute).
+All three are normalized to a 0-9999 scale and combined with a weighted
+average where DraftSharks is the primary source:
+    DS = 60%, KTC = 20%, FC = 20%
+When a source is missing for a player, the remaining sources' weights are
+re-normalized so the combined value isn't penalized for incomplete coverage.
 
 For each player we also expose "market_combined" — the KTC+FC-only average,
 used by the BUY/SELL gap signal where mixing DS into the market would
@@ -50,6 +53,10 @@ _cache: dict = {"data": None, "ts": 0.0}
 _rookie_cache: dict = {"data": None, "ts": 0.0}
 _picks_cache: dict = {"data": None, "ts": 0.0}
 CACHE_TTL = 900  # seconds
+
+# ── Source weights (DraftSharks is primary; KTC/FC are the market floor) ─────
+
+SOURCE_WEIGHTS = {"ds": 0.60, "ktc": 0.20, "fc": 0.20}
 
 
 # ---------------------------------------------------------------------------
@@ -369,8 +376,13 @@ def fetch_all_rankings() -> dict:
     market-driven value curve while letting DS contribute its rank opinion.
 
     Two combined values are produced:
-      - combined:        avg(KTC, FC, DS) where source has the player
-      - market_combined: avg(KTC, FC) — pure market, used by BUY/SELL gap
+      - combined:        weighted avg using SOURCE_WEIGHTS (DS primary at 60%,
+                         KTC/FC at 20% each). Weights re-normalize when a
+                         source is missing so coverage gaps don't deflate the
+                         combined score.
+      - market_combined: equal-weighted avg of KTC + FC only — pure market,
+                         used by the BUY/SELL gap where DS shouldn't appear
+                         on both sides of the comparison.
 
     Returns dict keyed by normalized player name:
       {
@@ -435,8 +447,17 @@ def fetch_all_rankings() -> dict:
         market_vals = [v for v in (ktc_v, fc_v) if v > 0]
         market_combined = round(sum(market_vals) / len(market_vals)) if market_vals else 0
 
-        all_vals = [v for v in (ktc_v, fc_v, ds_v) if v > 0]
-        combined = round(sum(all_vals) / len(all_vals)) if all_vals else 0
+        # Weighted combined: DS at 60%, KTC + FC at 20% each. Re-normalize
+        # weights across only the sources that have this player.
+        weighted_pairs = []
+        if ktc_v > 0: weighted_pairs.append((ktc_v, SOURCE_WEIGHTS["ktc"]))
+        if fc_v > 0:  weighted_pairs.append((fc_v,  SOURCE_WEIGHTS["fc"]))
+        if ds_v > 0:  weighted_pairs.append((ds_v,  SOURCE_WEIGHTS["ds"]))
+        if weighted_pairs:
+            wsum = sum(w for _, w in weighted_pairs)
+            combined = round(sum(v * w for v, w in weighted_pairs) / wsum)
+        else:
+            combined = 0
 
         sources = []
         if ktc_v > 0: sources.append("ktc")
@@ -541,10 +562,11 @@ def build_rankings_summary(rankings: dict, limit: int = 40) -> str:
     )[:limit]
 
     header = (
-        f"TOP {limit} DYNASTY VALUES — combined avg of KTC Superflex + FantasyCalc "
-        "SF 10-team 0.5PPR + DraftSharks dynasty composite (each 0-9999). "
-        "KTC/FC/DS columns show source disagreement; trend30d is FC 30-day "
-        "movement (positive = rising); dsR is DraftSharks rank."
+        f"TOP {limit} DYNASTY VALUES — weighted avg (DS=60%, KTC=20%, FC=20%) "
+        "of DraftSharks dynasty (PRIMARY), KTC Superflex, and FantasyCalc SF "
+        "10-team 0.5PPR (each 0-9999). KTC/FC/DS columns show source "
+        "disagreement; trend30d is FC 30-day movement (positive = rising); "
+        "dsR is DraftSharks rank."
     )
 
     lines = [header]
