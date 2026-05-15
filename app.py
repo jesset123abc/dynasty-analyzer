@@ -10,6 +10,7 @@ from rookies_data import ROOKIES_2026
 from power_rankings import compute_power_rankings
 from trade_impact import compute_trade_impact, compute_draft_impact, find_partner_team_id
 from nfl_tools import build_nfl_context, build_production_context, build_enhanced_rankings
+import memory_store
 
 load_dotenv()
 
@@ -1009,6 +1010,7 @@ def chat():
     messages    = body.get("messages", [])   # [{role, content}] full history
     team_id     = int(body.get("team_id", 8))
     app_context = body.get("app_context", "").strip()
+    session_id  = (body.get("session_id") or "").strip() or "default"
 
     try:
         data  = fetch_league_data()
@@ -1197,7 +1199,33 @@ def chat():
     if app_context:
         system += f"\n\n=== LIVE APP STATE ===\n{app_context}"
 
+    # Inject prior conversation history + curated memories from Supabase
+    try:
+        prior_memories = memory_store.get_recent_memories(limit=100)
+        memories_block = memory_store.format_memories_block(prior_memories)
+        if memories_block:
+            system += f"\n\n{memories_block}"
+    except Exception:
+        pass
+    try:
+        prior_messages = memory_store.get_recent_messages(limit=50)
+        history_block = memory_store.format_messages_block(prior_messages, session_id)
+        if history_block:
+            system += f"\n\n{history_block}"
+    except Exception:
+        pass
+
     system += """
+
+=== SAVING MEMORIES ===
+You have a save_memory tool. Call it AGGRESSIVELY (without asking) whenever Jesse:
+- Expresses a strategic decision or stance ("I'm holding Conner until W10", "I won't trade Love")
+- Declines or accepts a trade with reasoning
+- Sets a target or plan ("I want to draft Stowers at 1.10")
+- Shares a player conviction or thesis
+- Mentions a roster move, cut, or upcoming decision
+- States a rule for trade evaluation
+Each memory should be ONE sentence, concrete and self-contained (no pronouns like "him" without context). Better to over-save and prune later than to miss. Don't tell Jesse you saved — just do it inline with your normal response. Don't save trivia, jokes, or short acknowledgements ("ok", "thanks").
 
 === USING WEB SEARCH ===
 You have web_search available with up to 10 uses per turn. Use it AGGRESSIVELY — the data baked into this prompt is a snapshot; reality changes daily. Search proactively (don't wait to be told) whenever the user's question touches:
@@ -1211,19 +1239,39 @@ When answering a player-specific question, search FIRST, then synthesize the dyn
 
 Do NOT use a search for: pure trade-math questions (use the rankings/values in this prompt), questions Jesse already pasted into chat, or generic fantasy strategy that doesn't reference current events."""
 
-    # Web search tool (server-side, Anthropic handles execution)
+    # Web search tool (server-side, Anthropic handles execution) + save_memory (client-side)
     tools = [
         {
             "type": "web_search_20250305",
             "name": "web_search",
             "max_uses": 10,
-        }
+        },
+        {
+            "name": "save_memory",
+            "description": "Save a fact, decision, or stance about Jesse's dynasty team that should be remembered in future conversations. Call this proactively when Jesse expresses a decision, declines/accepts a trade with reasoning, sets a target, or shares a conviction. One sentence per memory, concrete and self-contained.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "note": {
+                        "type": "string",
+                        "description": "The fact/decision/stance to remember. One sentence, self-contained.",
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["trade", "roster", "strategy", "player", "draft", "other"],
+                        "description": "Category for the memory.",
+                    },
+                },
+                "required": ["note"],
+            },
+        },
     ]
 
     def generate():
+        accumulated_text = []  # for persisting final assistant reply
         try:
             current_messages = list(messages)
-            max_rounds = 4  # handle pause_turn loops
+            max_rounds = 6  # handle pause_turn + tool_use loops
 
             for _ in range(max_rounds):
                 response = None
@@ -1248,6 +1296,7 @@ Do NOT use a search for: pure trade-math questions (use the rankings/values in t
                                     elif event.type == "content_block_delta":
                                         delta = getattr(event, 'delta', None)
                                         if delta and getattr(delta, 'type', '') == "text_delta":
+                                            accumulated_text.append(delta.text)
                                             yield f"data: {json.dumps({'text': delta.text})}\n\n"
 
                             response = stream.get_final_message()
@@ -1261,7 +1310,26 @@ Do NOT use a search for: pure trade-math questions (use the rankings/values in t
                 if response is None:
                     raise last_overload or RuntimeError("No model response")
 
-                if response.stop_reason == "pause_turn":
+                if response.stop_reason == "tool_use":
+                    # Handle client-side tools (save_memory). server_tool_use (web_search)
+                    # is executed by Anthropic and arrives as pause_turn, not tool_use.
+                    tool_results = []
+                    for block in response.content:
+                        if getattr(block, "type", "") == "tool_use" and getattr(block, "name", "") == "save_memory":
+                            inp = getattr(block, "input", {}) or {}
+                            ok = memory_store.save_memory(
+                                inp.get("note", ""),
+                                inp.get("category"),
+                            )
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": "saved" if ok else "memory store unavailable",
+                            })
+                    current_messages.append({"role": "assistant", "content": response.content})
+                    current_messages.append({"role": "user", "content": tool_results})
+                    continue
+                elif response.stop_reason == "pause_turn":
                     # Continue the conversation for multi-search queries
                     current_messages.append({"role": "assistant", "content": response.content})
                     continue
@@ -1271,6 +1339,20 @@ Do NOT use a search for: pure trade-math questions (use the rankings/values in t
             yield "data: [DONE]\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            # Persist this exchange to Supabase (best-effort)
+            try:
+                last_user = next(
+                    (m for m in reversed(messages) if m.get("role") == "user"),
+                    None,
+                )
+                if last_user and isinstance(last_user.get("content"), str):
+                    memory_store.append_message(session_id, "user", last_user["content"])
+                final_text = "".join(accumulated_text).strip()
+                if final_text:
+                    memory_store.append_message(session_id, "assistant", final_text)
+            except Exception:
+                pass
 
     return Response(stream_with_context(generate()), content_type="text/event-stream")
 

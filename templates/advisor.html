@@ -538,6 +538,16 @@
   }
 
   // ── Session persistence (localStorage — shared across tabs) ──
+  const SESSION_ID_KEY = 'dynasty_advisor_session_id';
+  function getSessionId() {
+    let sid = localStorage.getItem(SESSION_ID_KEY);
+    if (!sid) {
+      sid = 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+      try { localStorage.setItem(SESSION_ID_KEY, sid); } catch(e) {}
+    }
+    return sid;
+  }
+
   function saveSession() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(history)); } catch(e) {}
   }
@@ -679,7 +689,7 @@
       const res = await fetch('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, team_id: teamId(), app_context: buildAppContext() }),
+        body: JSON.stringify({ messages: history, team_id: teamId(), app_context: buildAppContext(), session_id: getSessionId() }),
       });
 
       if (!res.ok) {
