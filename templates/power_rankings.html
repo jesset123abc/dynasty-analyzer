@@ -636,11 +636,16 @@
         <div class="analysis-grid">
           <div class="analysis-section">
             <div class="analysis-title">Key Stats</div>
-            <div class="stat-row"><span class="stat-label">Starter Value</span><span class="stat-value">{{ '{:,}'.format(team.starter_value) }}</span></div>
+            <div class="stat-row"><span class="stat-label">Starter Value (VOR)</span><span class="stat-value">{{ '{:,}'.format(team.starter_value) }}</span></div>
             <div class="stat-row"><span class="stat-label">Total Roster Value</span><span class="stat-value">{{ '{:,}'.format(team.total_value) }}</span></div>
             <div class="stat-row"><span class="stat-label">Draft Capital</span><span class="stat-value">{{ '{:,}'.format(team.draft_capital) }}</span></div>
             <div class="stat-row"><span class="stat-label">Weighted Avg Age</span><span class="stat-value">{{ team.weighted_age }}</span></div>
             <div class="stat-row"><span class="stat-label">Power Score</span><span class="stat-value" style="color:var(--green)">{{ team.power_score }}</span></div>
+            {% if team.expected_wins is defined %}
+            <div class="stat-row" style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px"><span class="stat-label">Expected Wins (sim)</span><span class="stat-value" style="color:var(--blue)">{{ team.expected_wins }} <span style="color:var(--muted);font-size:.7rem">({{ team.wins_p05 }}–{{ team.wins_p95 }})</span></span></div>
+            <div class="stat-row"><span class="stat-label">Playoff Odds</span><span class="stat-value" style="color:{{ 'var(--green)' if team.playoff_pct >= 60 else 'var(--blue)' if team.playoff_pct >= 30 else 'var(--red)' }}">{{ team.playoff_pct }}%</span></div>
+            <div class="stat-row"><span class="stat-label">Championship Odds</span><span class="stat-value" style="color:{{ 'var(--green)' if team.championship_pct >= 15 else 'var(--blue)' if team.championship_pct >= 5 else 'var(--red)' }}">{{ team.championship_pct }}%</span></div>
+            {% endif %}
           </div>
           <div class="analysis-section">
             <div class="analysis-title">Strengths & Weaknesses</div>

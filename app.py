@@ -9,6 +9,7 @@ from dynasty_data import fetch_all_rankings, build_rankings_summary, build_draft
 from rookies_data import ROOKIES_2026
 from power_rankings import compute_power_rankings
 from trade_impact import compute_trade_impact, compute_draft_impact, find_partner_team_id, simulate_draft_state
+from season_sim import simulate_season
 from nfl_tools import build_nfl_context, build_production_context, build_enhanced_rankings
 import memory_store
 
@@ -232,6 +233,31 @@ def index():
         return render_template("index.html", teams=[], my_team_id=8, error=str(e))
 
 
+# Monte Carlo season-sim cache. Sim takes ~1-2 seconds for 1000 runs;
+# cache by team-roster signature for the rankings TTL window (15 min).
+_SIM_CACHE: dict = {"key": None, "data": None, "ts": 0.0}
+_SIM_TTL = 900  # seconds
+
+
+def _season_sim_cached(teams: list, rankings: dict) -> dict:
+    """Return {team_id: sim_result} dict, cached by roster signature."""
+    import time as _t
+    # Cheap signature: each team's id + roster name set hash
+    sig = tuple((t["id"], len(t.get("roster", []))) for t in teams)
+    now = _t.time()
+    if _SIM_CACHE["key"] == sig and (now - _SIM_CACHE["ts"]) < _SIM_TTL and _SIM_CACHE["data"]:
+        return _SIM_CACHE["data"]
+    try:
+        results = simulate_season(teams, rankings, num_sims=1000)
+        by_id = {r["team_id"]: r for r in results}
+        _SIM_CACHE["key"] = sig
+        _SIM_CACHE["data"] = by_id
+        _SIM_CACHE["ts"] = now
+        return by_id
+    except Exception:
+        return {}
+
+
 def _load_draft_state_for_sim(teams: list) -> tuple[list, list, dict]:
     """
     Read draft_state.json (written by the draft board) and convert it into the
@@ -312,6 +338,18 @@ def power_rankings_page():
 
         pr_dynasty = compute_power_rankings(teams_for_pr, dynasty_for_pr, mode="dynasty", season_rankings=season_for_pr, apply_draft_state=apply_state)
         pr_season = compute_power_rankings(teams_for_pr, season_for_pr, mode="season", apply_draft_state=apply_state)
+
+        # Monte Carlo season simulation — attach to season-mode entries.
+        # Runs ~1-2s for 1000 sims, cached by roster signature.
+        sim_by_id = _season_sim_cached(teams_for_pr, season_for_pr)
+        for entry in pr_season:
+            sim = sim_by_id.get(entry["team_id"])
+            if sim:
+                entry["expected_wins"] = sim["expected_wins"]
+                entry["wins_p05"] = sim["wins_p05"]
+                entry["wins_p95"] = sim["wins_p95"]
+                entry["playoff_pct"] = sim["playoff_pct"]
+                entry["championship_pct"] = sim["championship_pct"]
         # Compute max positional values for bar scaling (use dynasty for both)
         max_pos = {}
         all_teams = pr_dynasty + pr_season
