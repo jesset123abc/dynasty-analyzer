@@ -59,6 +59,13 @@ CACHE_TTL = 900  # seconds
 
 SOURCE_WEIGHTS = {"ds": 0.75, "ktc": 0.25}
 
+# Position-specific volatility priors (in value-point units) — these are the
+# minimum amount of intrinsic uncertainty a player at this position carries,
+# even when sources fully agree. Higher for positions with bigger
+# injury/usage variance (RBs) than positions with more stable role
+# (QBs in SF where starts are guaranteed).
+_POS_VOLATILITY_PRIOR = {"RB": 500, "WR": 400, "TE": 450, "QB": 300}
+
 
 # ---------------------------------------------------------------------------
 # Draft pick values — Superflex format, March 2026
@@ -511,6 +518,59 @@ def fetch_all_rankings() -> dict:
     sorted_market = sorted(result.items(), key=lambda x: x[1]["market_combined"], reverse=True)
     for new_rank, (key, _) in enumerate(sorted_market, 1):
         result[key]["market_rank"] = new_rank
+
+    # ── Per-player UNCERTAINTY (combined_sigma) ──────────────────────────────
+    # σ = sqrt(σ_source² + σ_position_prior²)
+    # σ_source ≈ |ktc - ds| / 2 — half the source disagreement
+    # σ_position_prior comes from _POS_VOLATILITY_PRIOR — intrinsic uncertainty
+    # that exists even when sources fully agree (injury risk, usage variance).
+    for info in result.values():
+        ktc = info.get("ktc", 0)
+        ds = info.get("ds", 0)
+        if ktc > 0 and ds > 0:
+            sigma_source = abs(ktc - ds) / 2
+        elif ktc > 0 or ds > 0:
+            sigma_source = 400  # single-source players get a baseline uncertainty
+        else:
+            sigma_source = 0
+        pos = info.get("position", "")
+        sigma_prior = _POS_VOLATILITY_PRIOR.get(pos, 400)
+        info["combined_sigma"] = round((sigma_source ** 2 + sigma_prior ** 2) ** 0.5)
+        # 95% CI on the combined value (assuming roughly Gaussian)
+        info["ci95_low"] = max(0, info["combined"] - 2 * info["combined_sigma"])
+        info["ci95_high"] = min(9999, info["combined"] + 2 * info["combined_sigma"])
+
+    # ── EMPIRICAL BAYES SHRINKAGE (combined_shrunk) ──────────────────────────
+    # Pull each player's value toward their position-mean prior, weighted by
+    # confidence. High-confidence (low σ) players move little; low-confidence
+    # (high σ) players get pulled toward the position mean. Reduces overconfidence
+    # on outlier values that aren't supported by source agreement.
+    pos_mean = {}
+    pos_var = {}
+    for pos in ("QB", "RB", "WR", "TE"):
+        vals = [v["combined"] for v in result.values()
+                if v.get("position") == pos and v.get("combined", 0) > 100]
+        if vals:
+            mu = sum(vals) / len(vals)
+            pos_mean[pos] = mu
+            if len(vals) > 1:
+                pos_var[pos] = sum((v - mu) ** 2 for v in vals) / (len(vals) - 1)
+            else:
+                pos_var[pos] = 1_000_000  # high variance fallback
+    for info in result.values():
+        pos = info.get("position", "")
+        observed = info.get("combined", 0)
+        sigma_obs2 = max(info.get("combined_sigma", 400) ** 2, 1)
+        sigma_pos2 = pos_var.get(pos)
+        mu_pos = pos_mean.get(pos)
+        if mu_pos is None or sigma_pos2 is None or observed <= 0:
+            info["combined_shrunk"] = observed
+            continue
+        # Bayesian update: posterior_mean = (μ·σ_obs² + observed·σ_pos²) / (σ_pos² + σ_obs²)
+        # When σ_obs is small (high confidence), result ≈ observed (no shrinkage).
+        # When σ_obs is large (low confidence), result ≈ μ_pos (heavy shrinkage).
+        posterior = (mu_pos * sigma_obs2 + observed * sigma_pos2) / (sigma_pos2 + sigma_obs2)
+        info["combined_shrunk"] = round(posterior)
 
     _cache["data"] = result
     _cache["ts"] = now
