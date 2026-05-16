@@ -2057,20 +2057,20 @@ def buy_sell_page():
                 nkey = normalize_name(p["name"])
                 r = rankings.get(nkey, {})
                 exp = experts.get(nkey)
-                ktc_val = r.get("market_combined") or r.get("combined", 0)
+                # KTC-ONLY value/rank — no fallback to the DS-weighted combined.
+                # Skip the player if KTC doesn't have them; the gap signal
+                # only makes sense when both sources have an independent view.
+                ktc_val = r.get("market_combined", 0)
+                ktc_rank = r.get("market_rank", 999)
                 pos = p.get("position", "")
                 age = r.get("age", 0)
 
                 if not exp or pos not in ("QB", "RB", "WR", "TE"):
                     continue
-                if ktc_val < 100:
+                if ktc_val < 100 or ktc_rank >= 999:
                     continue
 
-                # Use market_rank (KTC-only) so DS isn't on both sides of the gap.
-                # Clamp to ktc_total so it's comparable to DS's percentile basis.
-                ktc_rank = r.get("market_rank") or r.get("rank", 999)
-                if ktc_rank >= 999:
-                    continue
+                # Clamp to ktc_total so KTC percentile matches DS's basis.
                 ktc_rank_clamped = min(ktc_rank, ktc_total)
                 ktc_score = _rank_to_percentile(ktc_rank_clamped, ktc_total)
                 expert_score = exp["expert_score"]
