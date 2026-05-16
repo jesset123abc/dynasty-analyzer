@@ -827,6 +827,21 @@ def draft_day():
         + [r["name"] for r in ROOKIES_2026],
     )
 
+    # Authoritative 2026 rookie board — the ONLY players draftable in this draft.
+    # Without this, the model has been hallucinating 2027 prospects (Jeremiah
+    # Smith, Caleb Downs, Manning) into trade rationales for 2026 picks.
+    drafted_names_lower = {n.lower() for n in (draft_state or {}).get("draftedNames", [])}
+    available_rookies = [r for r in ROOKIES_2026 if r["name"].lower() not in drafted_names_lower]
+    rookie_board_lines = ["=== 2026 ROOKIES STILL AVAILABLE ===",
+                          "This is the ONLY pool of players draftable in 2026. DO NOT invent or reference 2027 prospects (Jeremiah Smith, Caleb Downs, Arch Manning, etc.) as draftable here."]
+    for r in available_rookies[:40]:
+        info = rankings.get(normalize_name(r["name"]))
+        val = info["combined"] if info and info.get("combined") else r["ktc_est"]
+        rookie_board_lines.append(
+            f"  #{r['rank']}. {r['name']} ({r['pos']}, {r['nfl_team']}) — VAL:{val}"
+        )
+    rookie_board_block = "\n".join(rookie_board_lines)
+
     # ── Parse live draft board ─────────────────────────────────────────────────
     draft_ctx = _build_draft_context(draft_state)
 
@@ -949,6 +964,8 @@ USE FULL COMBINED VALUES IN ALL TRADE MATH:
 
 {ds_notes_block}
 
+{rookie_board_block}
+
 === FULL LEAGUE ROSTERS ===
 {league_summary}
 
@@ -957,7 +974,9 @@ Team: {my_team['name']} | Owner: Jesse | Record: {my_team['wins']}-{my_team['los
 QB1: Brock Purdy | Picks: 1.01 (Love, ~7101), 1.03 (Alex's, ~5400), 1.10 (Patrick's, ~3000)
 
 === HARD CONSTRAINTS ===
-- Every player mentioned MUST actually exist on that team's roster as shown above
+- Every player mentioned MUST actually exist on that team's roster OR on the 2026 ROOKIES list above
+- DO NOT INVENT PLAYERS. DO NOT reference 2027 NFL Draft prospects (Jeremiah Smith, Caleb Downs, Arch Manning, Ryan Williams, Jeremiyah Coleman, etc.) as draftable in 2026. Those players are NOT in this draft pool.
+- When describing what a 2026 pick "gets" a team, ONLY reference names from the 2026 ROOKIES STILL AVAILABLE list. For 1.01-1.05 picks the realistic targets are Love/Tate/Mendoza/Tyson/Lemon; for mid-1st (1.06-1.10) targets are Price/Concepcion/Sadiq/Cooper/Simpson/Stowers; for 2nd round targets are the players ranked roughly 10-30 on the rookie board.
 - A trade partner should NEVER give away a player at a position they are short on (e.g., a team needing QB depth should not give up their backup QB)
 - Trades must be ones BOTH sides would realistically accept
 - Never leave Jesse without a starting QB1 in Superflex
