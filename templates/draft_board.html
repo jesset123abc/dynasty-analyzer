@@ -1184,23 +1184,53 @@
 
   async function loadState() {
     // Try server first (cross-device sync), fall back to localStorage
+    let serverState = null;
     try {
       const res = await fetch('/api/draft-state');
       if (res.ok) {
         const s = await res.json();
         if (s?.currentPick !== undefined) {
-          state = s;
-          localStorage.setItem(STATE_KEY, JSON.stringify(state));
-          applyStateDefaults();
-          return;
+          serverState = s;
         }
       }
     } catch(e) {}
-    // Fall back to localStorage
+
+    // Read localStorage state
+    let localState = null;
     try {
       const raw = localStorage.getItem(STATE_KEY);
-      if (raw) state = JSON.parse(raw);
+      if (raw) localState = JSON.parse(raw);
     } catch(e) {}
+
+    if (serverState) {
+      // Server has state — adopt it.
+      // BUT: if localStorage has MORE picks than server, server lost data
+      // (Railway restart) — re-sync from local to fix it.
+      const serverPicks = (serverState.draftLog || []).length;
+      const localPicks = (localState?.draftLog || []).length;
+      if (localState && localPicks > serverPicks) {
+        console.log(`Local has ${localPicks} picks vs server ${serverPicks}, re-syncing local up`);
+        state = localState;
+        // Fire-and-forget sync up
+        fetch('/api/draft-state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(state),
+        }).catch(() => {});
+      } else {
+        state = serverState;
+        localStorage.setItem(STATE_KEY, JSON.stringify(state));
+      }
+    } else if (localState) {
+      // Server has nothing but local does — push local up so other pages can see it
+      console.log('Server has no draft state, pushing local up');
+      state = localState;
+      fetch('/api/draft-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+      }).catch(() => {});
+    }
     applyStateDefaults();
   }
 

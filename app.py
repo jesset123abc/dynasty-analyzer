@@ -261,19 +261,11 @@ def _season_sim_cached(teams: list, rankings: dict) -> dict:
 
 def _load_draft_state_for_sim(teams: list) -> tuple[list, list, dict]:
     """
-    Read draft_state.json (written by the draft board) and convert it into the
-    (draft_picks, trade_log) format that simulate_draft_state expects.
-    Returns (draft_picks, trade_log, summary_dict).
+    Load the persisted draft state (Supabase or local file, in that order)
+    and convert it into (draft_picks, trade_log) for simulate_draft_state.
     """
     summary = {"picks_count": 0, "trades_count": 0, "last_pick": None}
-    try:
-        state_path = os.path.join(os.path.dirname(__file__), STATE_FILE) \
-            if not os.path.isabs(STATE_FILE) else STATE_FILE
-        with open(state_path) as f:
-            draft_state = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return [], [], summary
-
+    draft_state = _load_persisted_draft_state()
     if not draft_state:
         return [], [], summary
 
@@ -1330,8 +1322,7 @@ def chat():
     # Build draft board context if available, including server-side impact computation
     draft_ctx = ""
     try:
-        with open(STATE_FILE) as f:
-            draft_state = json.load(f)
+        draft_state = _load_persisted_draft_state()
         if draft_state and draft_state.get("draftLog"):
             draft_lines = ["DRAFT BOARD:"]
             for entry in sorted(draft_state["draftLog"], key=lambda e: e.get("pick", 0)):
@@ -1396,7 +1387,7 @@ def chat():
                 pass
 
             draft_ctx = "\n".join(draft_lines)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except Exception:
         pass
 
     # Compact rookie board — top 10
@@ -1645,20 +1636,42 @@ def rankings_page():
 
 STATE_FILE = os.getenv("STATE_FILE", "draft_state.json")
 
-@app.route("/api/draft-state", methods=["GET"])
-def get_draft_state_api():
+
+def _load_persisted_draft_state() -> dict | None:
+    """Try Supabase first (survives Railway restarts), fall back to local file."""
+    state = memory_store.load_draft_state()
+    if state is not None:
+        return state
     try:
         with open(STATE_FILE) as f:
-            return jsonify(json.load(f))
-    except FileNotFoundError:
-        return jsonify(None)
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
+def _save_persisted_draft_state(state: dict) -> None:
+    """Write to BOTH Supabase (durable) and local file (in-process cache)."""
+    memory_store.save_draft_state(state)
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(STATE_FILE)), exist_ok=True)
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f)
+    except Exception:
+        pass
+
+
+@app.route("/api/draft-state", methods=["GET"])
+def get_draft_state_api():
+    state = _load_persisted_draft_state()
+    return jsonify(state)
+
 
 @app.route("/api/draft-state", methods=["POST"])
 def save_draft_state_api():
     data = request.get_json()
-    os.makedirs(os.path.dirname(os.path.abspath(STATE_FILE)), exist_ok=True)
-    with open(STATE_FILE, "w") as f:
-        json.dump(data, f)
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "expected JSON object"}), 400
+    _save_persisted_draft_state(data)
     return jsonify({"ok": True})
 
 

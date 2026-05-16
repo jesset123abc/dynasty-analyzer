@@ -120,6 +120,33 @@ def format_memories_block(memories: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def load_draft_state() -> dict | None:
+    """Return the persisted draft state from Supabase (single row, id=1)."""
+    c = _get_client()
+    if not c:
+        return None
+    try:
+        res = c.table("draft_state").select("state").eq("id", 1).execute()
+        rows = res.data or []
+        if not rows:
+            return None
+        return rows[0].get("state")
+    except Exception:
+        return None
+
+
+def save_draft_state(state: dict) -> bool:
+    """Upsert the draft state into Supabase. Returns True on success."""
+    c = _get_client()
+    if not c or not isinstance(state, dict):
+        return False
+    try:
+        c.table("draft_state").upsert({"id": 1, "state": state}).execute()
+        return True
+    except Exception:
+        return False
+
+
 def format_messages_block(messages: list[dict], current_session_id: str) -> str:
     """Format prior conversation history excluding the current session."""
     if not messages:
