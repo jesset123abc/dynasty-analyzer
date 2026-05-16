@@ -1115,17 +1115,19 @@ def _build_advisor_buy_sell_block(rankings: dict, teams: list, my_team_id: int) 
     if not rankings:
         return ""
 
-    market_total = sum(1 for r in rankings.values() if r.get("market_combined", 0) > 0)
     ds_total = sum(1 for r in rankings.values() if r.get("ds_rank", 0) > 0)
-    if market_total < 5 or ds_total < 5:
+    if ds_total < 5:
         return ""
+
+    # Both percentiles use the same denominator (DS's universe ~250) so the
+    # gap reflects real disagreement, not a denominator mismatch.
+    common_total = ds_total
 
     def to_pct(rank, total):
         if not rank or rank < 1 or total <= 1:
             return 0.0
-        if rank > total:
-            return 0.0
-        return round(100 * (1 - (rank - 1) / (total - 1)), 1)
+        clamped = min(rank, total)
+        return round(100 * (1 - (clamped - 1) / (total - 1)), 1)
 
     buys, sells = [], []
     for team in teams:
@@ -1140,8 +1142,8 @@ def _build_advisor_buy_sell_block(rankings: dict, teams: list, my_team_id: int) 
             ds_rank = r.get("ds_rank", 0)
             if mkt_rank >= 999 or ds_rank < 1:
                 continue
-            mkt_pct = to_pct(mkt_rank, market_total)
-            ds_pct = to_pct(ds_rank, ds_total)
+            mkt_pct = to_pct(mkt_rank, common_total)
+            ds_pct = to_pct(ds_rank, common_total)
             if mkt_pct < 3 and ds_pct < 3:
                 continue
             gap = round(ds_pct - mkt_pct, 1)
@@ -2033,8 +2035,10 @@ def buy_sell_page():
         my_team_id = int(request.args.get("team_id", 8))
         threshold = float(request.args.get("threshold", 8))  # min score gap (0-100 scale)
 
-        # Count total market-ranked players for percentile calc (excludes DS bias)
-        ktc_total = sum(1 for r in rankings.values() if r.get("market_combined", 0) > 0)
+        # Both percentiles must use the SAME denominator. DS covers ~250
+        # players, so we use that universe for both axes — players whose KTC
+        # rank exceeds 250 are clamped to the bottom of the comparable range.
+        ktc_total = max(len(experts), 1)
 
         buy_signals = []
         sell_signals = []
@@ -2057,11 +2061,13 @@ def buy_sell_page():
                 if ktc_val < 100:
                     continue
 
-                # Use market_rank (KTC+FC only) so DS isn't on both sides of the gap
+                # Use market_rank (KTC-only) so DS isn't on both sides of the gap.
+                # Clamp to ktc_total so it's comparable to DS's percentile basis.
                 ktc_rank = r.get("market_rank") or r.get("rank", 999)
                 if ktc_rank >= 999:
                     continue
-                ktc_score = _rank_to_percentile(ktc_rank, ktc_total)
+                ktc_rank_clamped = min(ktc_rank, ktc_total)
+                ktc_score = _rank_to_percentile(ktc_rank_clamped, ktc_total)
                 expert_score = exp["expert_score"]
 
                 # Skip very low-value players on both sides
