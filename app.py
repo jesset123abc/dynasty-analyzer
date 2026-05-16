@@ -10,6 +10,7 @@ from rookies_data import ROOKIES_2026
 from power_rankings import compute_power_rankings
 from trade_impact import compute_trade_impact, compute_draft_impact, find_partner_team_id, simulate_draft_state
 from season_sim import simulate_season
+from backtest_weights import run_backtest
 from nfl_tools import build_nfl_context, build_production_context, build_enhanced_rankings
 import memory_store
 
@@ -307,6 +308,20 @@ def _load_draft_state_for_sim(teams: list) -> tuple[list, list, dict]:
         summary["last_pick"] = f"#{last.get('pick')} {last.get('player_name')} ({last.get('pos')})"
 
     return draft_picks, trade_log, summary
+
+
+@app.route("/api/backtest-weights")
+def backtest_weights_endpoint():
+    """Run the source-weight backtest and return JSON results."""
+    try:
+        min_games = int(request.args.get("min_games", 6))
+    except (TypeError, ValueError):
+        min_games = 6
+    try:
+        result = run_backtest(min_2025_games=min_games)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/power-rankings")
