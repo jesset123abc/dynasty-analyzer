@@ -294,8 +294,12 @@ def _to_float(s) -> float:
 def _fetch_draftsharks() -> dict:
     """
     Load DraftSharks dynasty rankings from local CSV (manually refreshed).
-    Returns {norm_name: {ds_rank, ds_pos, ds_team, ds_proj_1yr, ds_proj_3yr,
-                          ds_proj_5yr, ds_proj_10yr, ds_analysis}}
+    Returns {norm_name: {ds_rank, ds_3d_value, ds_pos, ds_team, ds_proj_*,
+                          ds_analysis}}
+
+    `ds_3d_value` is DraftSharks' proprietary 0-100 dynasty value score
+    (their "3D Value +" column) — Josh Allen = 100, descending. Used as
+    DS's native value signal (replaces the old DS-rank → KTC-curve lookup).
     """
     if not os.path.exists(DRAFTSHARKS_FILE):
         return {}
@@ -314,6 +318,7 @@ def _fetch_draftsharks() -> dict:
                 result[_normalize(name)] = {
                     "ds_name":      name,
                     "ds_rank":      rank,
+                    "ds_3d_value":  max(0.0, _to_float(row.get("3D Value +"))),
                     "ds_pos":       (row.get("Fantsy Position") or "").strip(),
                     "ds_team":      (row.get("Team") or "").strip(),
                     "ds_proj_1yr":  _to_float(row.get("1yr. Proj")),
@@ -392,10 +397,13 @@ def fetch_all_rankings() -> dict:
     """
     Triangulate KTC + DraftSharks Superflex dynasty values.
 
-    Each source is normalized to 0-9999. DraftSharks publishes ranks only
-    (not values), so we map each DS rank to the value sitting at that rank
-    in KTC's sorted value distribution — preserving the shape of the
-    market-driven value curve while letting DS contribute its rank opinion.
+    Each source is normalized to a 0-9999 scale:
+      - KTC: superflexValues.value / max(superflexValues.value) * 9999
+      - DS:  "3D Value +" column (DS's proprietary 0-100 dynasty value
+             score, where Josh Allen = 100) / 100 * 9999
+
+    This gives each source its own native value curve — DS's shape comes
+    from DraftSharks' analyst composite, not borrowed from KTC's curve.
 
     Two combined values are produced:
       - combined:        weighted avg DS:75% + KTC:25% (re-normalized when
@@ -434,17 +442,11 @@ def fetch_all_rankings() -> dict:
     ktc_players, _picks = _fetch_ktc()
     ds_players = _fetch_draftsharks()
 
-    # Build a sorted KTC value list so we can map DS ranks onto the KTC value scale
-    ktc_values_sorted = sorted(
-        [p.get("ktc", 0) for p in ktc_players.values() if p.get("ktc", 0) > 0],
-        reverse=True,
-    )
-
-    def _ds_rank_to_value(rank: int) -> int:
-        if rank < 1 or not ktc_values_sorted:
-            return 0
-        idx = min(rank - 1, len(ktc_values_sorted) - 1)
-        return ktc_values_sorted[idx]
+    # Find max DS 3D Value for normalization to 0-9999 (top should be ~100.0)
+    ds_max_3d = max(
+        (d.get("ds_3d_value", 0.0) for d in ds_players.values()),
+        default=0.0,
+    ) or 1.0
 
     all_keys = set(ktc_players) | set(ds_players)
 
@@ -455,7 +457,9 @@ def fetch_all_rankings() -> dict:
 
         ktc_v = k.get("ktc", 0)
         ds_rank = d.get("ds_rank", 0) if d else 0
-        ds_v = _ds_rank_to_value(ds_rank) if ds_rank else 0
+        ds_3d = d.get("ds_3d_value", 0.0) if d else 0.0
+        # DS native value: 3D Value score normalized to 0-9999 scale
+        ds_v = round((ds_3d / ds_max_3d) * 9999) if ds_3d > 0 else 0
 
         # market_combined = KTC only (pure market reference for BUY/SELL gap)
         market_combined = ktc_v
@@ -481,6 +485,7 @@ def fetch_all_rankings() -> dict:
             "ktc":             ktc_v,
             "ds":              ds_v,
             "ds_rank":         ds_rank,
+            "ds_3d_value":     d.get("ds_3d_value", 0.0) if d else 0.0,
             "ds_proj_1yr":     d.get("ds_proj_1yr", 0) if d else 0,
             "ds_proj_3yr":     d.get("ds_proj_3yr", 0) if d else 0,
             "ds_proj_5yr":     d.get("ds_proj_5yr", 0) if d else 0,
@@ -647,10 +652,12 @@ def build_rankings_summary(rankings: dict, limit: int = 40) -> str:
     )[:limit]
 
     header = (
-        f"TOP {limit} DYNASTY VALUES — weighted avg (DS=75%, KTC=25%) of "
-        "DraftSharks dynasty composite (PRIMARY) and KTC Superflex "
-        "(each 0-9999). KTC/DS columns show source disagreement; dsR is "
-        "DraftSharks rank."
+        f"TOP {limit} DYNASTY VALUES — weighted avg (DS=75%, KTC=25%). "
+        "DS value comes from DraftSharks' native '3D Value +' score "
+        "(0-100, Josh Allen=100). KTC value is KTC Superflex normalized. "
+        "Both columns are on the same 0-9999 scale but use independent "
+        "curves — disagreement between KTC and DS reflects real "
+        "methodology differences (KTC = market price, DS = analyst composite)."
     )
 
     lines = [header]
