@@ -1120,21 +1120,11 @@ def _build_advisor_buy_sell_block(rankings: dict, teams: list, my_team_id: int) 
     if not rankings:
         return ""
 
-    ds_total = sum(1 for r in rankings.values() if r.get("ds_rank", 0) > 0)
-    if ds_total < 5:
-        return ""
-
-    # Both percentiles use the same denominator (DS's universe ~250) so the
-    # gap reflects real disagreement, not a denominator mismatch.
-    common_total = ds_total
-
-    def to_pct(rank, total):
-        if not rank or rank < 1 or total <= 1:
-            return 0.0
-        clamped = min(rank, total)
-        return round(100 * (1 - (clamped - 1) / (total - 1)), 1)
-
+    # Pure RAW VALUE comparison — both axes are independent normalized values
+    # on the 0-9999 scale (KTC: superflex value; DS: 3D Value score). No
+    # percentile transform, no weighted blend.
     buys, sells = [], []
+    THRESHOLD = 500  # value points (~5% of 9999 scale)
     for team in teams:
         is_mine = team["id"] == my_team_id
         first = team["owner"].split()[0]
@@ -1143,23 +1133,19 @@ def _build_advisor_buy_sell_block(rankings: dict, teams: list, my_team_id: int) 
             if p.get("position") not in ("QB", "RB", "WR", "TE"):
                 continue
             r = rankings.get(normalize_name(p["name"]), {})
-            mkt_rank = r.get("market_rank", 999)
-            ds_rank = r.get("ds_rank", 0)
-            if mkt_rank >= 999 or ds_rank < 1:
+            ktc_v = r.get("ktc", 0)
+            ds_v = r.get("ds", 0)
+            if ktc_v < 100 or ds_v < 100:
                 continue
-            mkt_pct = to_pct(mkt_rank, common_total)
-            ds_pct = to_pct(ds_rank, common_total)
-            if mkt_pct < 3 and ds_pct < 3:
-                continue
-            gap = round(ds_pct - mkt_pct, 1)
-            if abs(gap) < 5:
+            gap = ds_v - ktc_v
+            if abs(gap) < THRESHOLD:
                 continue
             (buys if gap > 0 else sells).append({
                 "name":    p["name"],
                 "pos":     p["position"],
                 "owner":   "Jesse" if is_mine else owner,
-                "ds_pct":  ds_pct,
-                "mkt_pct": mkt_pct,
+                "ds_val":  ds_v,
+                "ktc_val": ktc_v,
                 "gap":     gap,
                 "mine":    is_mine,
             })
@@ -1176,20 +1162,22 @@ def _build_advisor_buy_sell_block(rankings: dict, teams: list, my_team_id: int) 
             sign = "+" if r["gap"] > 0 else ""
             out.append(
                 f"    {r['name']}({r['pos']}) {r['owner']}: "
-                f"DS:{r['ds_pct']} vs Mkt:{r['mkt_pct']} "
+                f"DS:{r['ds_val']} vs KTC:{r['ktc_val']} "
                 f"({sign}{r['gap']}){j}"
             )
         return "\n".join(out)
 
-    parts = ["=== DRAFTSHARKS EXPERT vs MARKET — TOP GAPS ==="]
+    parts = ["=== DRAFTSHARKS vs KTC — RAW VALUE GAPS ==="]
     parts.append(
-        "Percentile-scaled (100=best). DS=DraftSharks rank, "
-        "Mkt=KTC-only rank (DS excluded so gap stays clean). "
-        "Positive gap = DS values higher than market (BUY signal). "
-        "Negative gap = market values higher than DS (SELL signal)."
+        "Both values on the same 0-9999 scale (KTC = superflex value, "
+        "DS = 3D Value score). No weighting, no percentile transform — "
+        "pure source disagreement. Positive gap = DS values higher than "
+        "KTC (BUY signal — analysts ahead of market). Negative gap = "
+        "KTC values higher than DS (SELL signal — market may be "
+        "overvaluing vs analyst view)."
     )
-    buys_block = _fmt(buys, "BUY candidates (DS > Mkt)")
-    sells_block = _fmt(sells, "SELL candidates (Mkt > DS)")
+    buys_block = _fmt(buys, "BUY candidates (DS > KTC)")
+    sells_block = _fmt(sells, "SELL candidates (KTC > DS)")
     if buys_block:
         parts.append(buys_block)
     if sells_block:
@@ -2036,14 +2024,9 @@ def buy_sell_page():
         data = fetch_league_data()
         teams = parse_league(data)
         rankings = fetch_all_rankings()
-        experts = _load_expert_scores()
         my_team_id = int(request.args.get("team_id", 8))
-        threshold = float(request.args.get("threshold", 8))  # min score gap (0-100 scale)
-
-        # Both percentiles must use the SAME denominator. DS covers ~250
-        # players, so we use that universe for both axes — players whose KTC
-        # rank exceeds 250 are clamped to the bottom of the comparable range.
-        ktc_total = max(len(experts), 1)
+        # Default threshold = 500 value points (about 5% of the 0-9999 scale)
+        threshold = float(request.args.get("threshold", 500))
 
         buy_signals = []
         sell_signals = []
@@ -2056,38 +2039,27 @@ def buy_sell_page():
             for p in team["roster"]:
                 nkey = normalize_name(p["name"])
                 r = rankings.get(nkey, {})
-                exp = experts.get(nkey)
-                # KTC-ONLY value/rank — no fallback to the DS-weighted combined.
-                # Skip the player if KTC doesn't have them; the gap signal
-                # only makes sense when both sources have an independent view.
-                ktc_val = r.get("market_combined", 0)
-                ktc_rank = r.get("market_rank", 999)
+                # Pure RAW VALUE comparison — never weighted, never percentile.
+                # Both axes are independent normalized values on the 0-9999 scale.
+                ktc_val = r.get("ktc", 0)              # KTC superflex value
+                ds_val = r.get("ds", 0)                # DS 3D Value normalized
+                ds_rank = r.get("ds_rank", 0)
                 pos = p.get("position", "")
                 age = r.get("age", 0)
 
-                if not exp or pos not in ("QB", "RB", "WR", "TE"):
+                if pos not in ("QB", "RB", "WR", "TE"):
                     continue
-                if ktc_val < 100 or ktc_rank >= 999:
-                    continue
+                if ktc_val < 100 or ds_val < 100:
+                    continue  # need both sources to compute a meaningful gap
 
-                # Clamp to ktc_total so KTC percentile matches DS's basis.
-                ktc_rank_clamped = min(ktc_rank, ktc_total)
-                ktc_score = _rank_to_percentile(ktc_rank_clamped, ktc_total)
-                expert_score = exp["expert_score"]
+                # Raw value gap: positive = DS values higher than KTC (BUY)
+                gap = ds_val - ktc_val
 
-                # Skip very low-value players on both sides
-                if ktc_score < 3 and expert_score < 3:
-                    continue
-
-                # Score gap: positive = experts value higher than KTC
-                gap = round(expert_score - ktc_score, 1)
-
-                # Lower threshold for own team (holds/sells are always useful to see)
+                # Lower threshold for own team so holds/sells always surface
                 min_gap = threshold * 0.5 if is_my_team else threshold
                 if abs(gap) < min_gap:
                     continue
 
-                ds_rank = exp.get("ds_rank", "")
                 source_str = f"DS #{ds_rank}" if ds_rank else ""
 
                 entry = {
@@ -2098,15 +2070,15 @@ def buy_sell_page():
                     "owner": display_owner,
                     "is_my_team": is_my_team,
                     "ktc_value": ktc_val,
-                    "ktc_score": ktc_score,
-                    "expert_score": expert_score,
+                    "ktc_score": ktc_val,       # template still reads ktc_score
+                    "expert_score": ds_val,     # template still reads expert_score
                     "gap": abs(gap),
                     "source_detail": source_str,
-                    "analysis": exp.get("analysis", ""),
+                    "analysis": r.get("ds_analysis", ""),
                 }
 
                 if gap > 0:
-                    # BUY/HOLD: experts score higher than KTC market
+                    # BUY/HOLD: DS values higher than KTC market
                     # Skip aging vets (28+ for RB, 30+ for WR/TE, 32+ for QB)
                     # unless they're on my team (still useful to know they're undervalued)
                     age_cutoffs = {"RB": 28, "WR": 30, "TE": 31, "QB": 32}
@@ -2118,41 +2090,39 @@ def buy_sell_page():
                     if is_my_team:
                         tags.append("HOLD")
                     elif age and age < 25:
-                        if gap >= 12:
+                        if gap >= 1000:
                             tags.append("BREAKOUT CANDIDATE")
                         else:
                             tags.append("YOUNG VALUE")
-                    elif gap >= 20:
+                    elif gap >= 1500:
                         tags.append("UNDERVALUED")
-                    elif gap >= 12:
-                        tags.append("VALUE BUY")
                     else:
                         tags.append("VALUE BUY")
                     entry["tags"] = tags
                     entry["reason"] = (
-                        f"DS {expert_score} vs KTC {ktc_score} "
-                        f"(+{abs(gap)} pts). {source_str}"
+                        f"DS:{ds_val} vs KTC:{ktc_val} "
+                        f"(+{abs(gap)}). {source_str}"
                     )
                     entry["sort_score"] = gap
                     buy_signals.append(entry)
 
                 elif gap < 0:
-                    # SELL: KTC scores higher than experts
+                    # SELL: KTC values higher than DS
                     tags = []
                     if is_my_team:
                         tags.append("YOUR TEAM")
                     if age and age >= 28:
                         tags.append("AGING")
-                    if abs(gap) >= 20:
+                    if abs(gap) >= 1500:
                         tags.append("OVERVALUED")
-                    elif abs(gap) >= 12:
+                    elif abs(gap) >= 1000:
                         tags.append("SELL HIGH")
                     else:
                         tags.append("DECLINING")
                     entry["tags"] = tags
                     entry["reason"] = (
-                        f"DS {expert_score} vs KTC {ktc_score} "
-                        f"({abs(gap)} pts too high on KTC). {source_str}"
+                        f"DS:{ds_val} vs KTC:{ktc_val} "
+                        f"({abs(gap)} above DS). {source_str}"
                     )
                     entry["sort_score"] = abs(gap)
                     sell_signals.append(entry)
