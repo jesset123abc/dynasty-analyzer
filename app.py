@@ -857,21 +857,26 @@ Jesse is entertaining offers for the 1.10 pick — Combined Value ~3000.
 Jesse keeps 1.01 and 1.03 picks (or has already used them) — only 1.10 is being moved.
 {_needs_now}
 
-HOW TO BUILD THESE TRADES (no fake discounts):
-- 1.10 alone is worth ~3000. If Jesse wants a more valuable player on the return side, he MUST add picks/players from his peripheral assets (2nd/3rd/4th rounders, IR players, low-value bench) until the value match works.
-- Use each player's FULL Combined Value as shown in the rankings. Do not invent backup/depth discounts.
-- If a target player is worth e.g. 4900 and Jesse's 1.10 is 3000, Jesse adds ~1900 of additional value on his side to balance.
-- If you can't find a fair partnership for 1.10 (or 1.10 plus reasonable additions), propose fewer trades rather than fabricating value adjustments.
+HOW TO BUILD THESE TRADES — READ THIS CAREFULLY:
+1.10 alone is only worth ~3000. To land any meaningful return, Jesse PACKAGES additional peripheral assets on his side. This is the expectation, not the exception. Look at the MY TEAM rosters section above for Jesse's full inventory — use anything that's NOT his 1.01, 1.03, or Purdy.
 
-SANITY CHECK BEFORE INCLUDING EACH TRADE:
-1. Does the trading partner have enough surplus at the position(s) Jesse receives? Don't propose a team trading away a player at a position they're thin on.
-2. Does the partner actually WANT a late 1st (pick need or rebuild motivation)?
-3. Is the player Jesse receives truly surplus for that team — not a starter they depend on?
-4. Do NOT leave Jesse without a QB1 if Purdy is involved.
+PACKAGE INVENTORY Jesse can offer ALONGSIDE 1.10 (combine freely):
+  - Jesse's 2026 2nd / 3rd / 4th round picks (look up exact values in the rankings/pick listings)
+  - Jesse's 2027 2nd / 3rd / 4th round picks
+  - Driscoll's 2027 1st (Jesse holds it — only trade as last resort; mention if used)
+  - IR/depth players Jesse can flip: Conner, Dell, Najee Harris, Helm, Bigsby, Tracy Jr., Blue, etc.
+  - Any peripheral player on Jesse's roster who isn't a clear hold
 
-TASK ({style["label"].upper()}): Generate exactly 5 trade scenarios from 5 DIFFERENT teams involving Jesse moving 1.10. {style["task_note"]}
+TRADE CONSTRUCTION RULES:
+- Use FULL Combined Values from the rankings — no backup discounts, no haircuts.
+- If a target player is worth 4900, Jesse adds peripherals (e.g. 1.10 + 2027 2nd + IR player) until totals match within the {style["label"]} window.
+- You MUST find ways to package — DO NOT return fewer than the requested number of trades simply because 1.10-alone doesn't match. Add peripheral assets until the math works.
+- VERIFY trade partner motivations: don't propose someone giving up a player they need; don't propose someone wanting 1.10 if their roster is full of late picks already.
+- Do NOT leave Jesse without a QB1 if Purdy is involved.
+
+TASK ({style["label"].upper()}): Generate exactly 5 trade scenarios from 5 DIFFERENT teams involving Jesse moving 1.10 plus peripheral assets. {style["task_note"]}
 Each scenario must come from a different team.
-For each trade, calculate: Jesse gives 1.10 + any additional assets (VAL total) → Jesse receives [assets] (VAL total). Ratio = receives/gives. Confirm it meets {style["label"]} requirement using FULL Combined Values.
+For each trade, calculate: Jesse gives 1.10 + [peripheral assets] (VAL total) → Jesse receives [assets] (VAL total). Ratio = receives/gives. Confirm it meets {style["label"]} requirement using FULL Combined Values.
 scenario_type for all trades: "Sell 1.10 — Package Deal" """
 
     draft_ctx_section = f"\n{draft_ctx}\n" if draft_ctx else ""
