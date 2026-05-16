@@ -823,6 +823,7 @@ Do NOT leave Jesse without a QB1 if Purdy is involved.
 TASK ({style["label"].upper()}): Generate exactly 5 trade packages from 5 DIFFERENT teams, each showing what Jesse should demand to sell 1.01. {style["task_note"]}
 Each scenario must come from a different team. Vary the package structures (star player, star + pick, multi-pick stack, etc.).
 SANITY CHECK BEFORE INCLUDING EACH TRADE: Does the trading partner actually WANT Jeremiyah Love given their roster? Do they have an RB need and enough capital to give? Would they rationally give up what you're proposing?
+Use FULL Combined Values from the rankings for every player on both sides — no backup discounts or arbitrary haircuts.
 For each trade, calculate: Jesse gives 1.01 (~7101 VAL) → Jesse receives [assets] (VAL total). Ratio = receives/7101. Confirm it meets {style["label"]} requirement.
 scenario_type for all trades: "Sell 1.01 — Trade Up Package" """
 
@@ -842,6 +843,7 @@ TASK ({style["label"].upper()}): Generate exactly 5 trade packages from 5 DIFFER
 Each scenario must come from a different team. Vary the package structures.
 SANITY CHECK: Focus on teams that genuinely NEED a blue-chip WR or young playmaker AND have the capital (players/picks) to give. Do NOT include teams as buyers if they have no logical reason to want this pick.
 SANITY CHECK: Only offer players from teams that can realistically part with them given their own roster needs as shown above.
+Use FULL Combined Values from the rankings for every player on both sides — no backup discounts or arbitrary haircuts.
 For each trade, calculate: Jesse gives 1.03 (~5400 VAL) → Jesse receives [assets] (VAL total). Ratio = receives/5400. Confirm it meets {style["label"]} requirement.
 scenario_type for all trades: "Sell 1.03 — Trade Up Package" """
 
@@ -851,25 +853,25 @@ scenario_type for all trades: "Sell 1.03 — Trade Up Package" """
         _prior = f"Jesse has already drafted: {_haul_str}. " if _jesse_haul else ""
         pick_task = f"""=== THE PICK BEING SOLD: 1.10 (Patrick's pick, held by Jesse) ===
 {_110_status} {_prior}
-Jesse is entertaining offers for the 1.10 pick — last pick of round 1, best player available (Combined Value ~3000).
+Jesse is entertaining offers for the 1.10 pick — Combined Value ~3000.
 Jesse keeps 1.01 and 1.03 picks (or has already used them) — only 1.10 is being moved.
-
-FLOOR: Jesse receives a minimum of ~3000 Combined Value for 1.10.
 {_needs_now}
-WHAT IS REALISTIC FOR A 1.10 PICK (~3000 value)? This is a late 1st — treat it accordingly:
-- A mid-tier starter (age 24–27) who is underperforming on their current team
-- A 2026 2nd + a 2027 3rd
-- A package of future mid-round picks
-It does NOT get: top-40 dynasty players, starting QBs with significant upside, or elite young players. Those are worth far more.
+
+HOW TO BUILD THESE TRADES (no fake discounts):
+- 1.10 alone is worth ~3000. If Jesse wants a more valuable player on the return side, he MUST add picks/players from his peripheral assets (2nd/3rd/4th rounders, IR players, low-value bench) until the value match works.
+- Use each player's FULL Combined Value as shown in the rankings. Do not invent backup/depth discounts.
+- If a target player is worth e.g. 4900 and Jesse's 1.10 is 3000, Jesse adds ~1900 of additional value on his side to balance.
+- If you can't find a fair partnership for 1.10 (or 1.10 plus reasonable additions), propose fewer trades rather than fabricating value adjustments.
+
 SANITY CHECK BEFORE INCLUDING EACH TRADE:
-1. Does the trading partner have enough surplus at the position(s) Jesse receives? (Don't have a team trade away their only QB if they need QB depth.)
-2. Does the trading partner actually WANT a late 1st round pick — do they have a pick need or rebuild motivation?
+1. Does the trading partner have enough surplus at the position(s) Jesse receives? Don't propose a team trading away a player at a position they're thin on.
+2. Does the partner actually WANT a late 1st (pick need or rebuild motivation)?
 3. Is the player Jesse receives truly surplus for that team — not a starter they depend on?
-Do NOT leave Jesse without a QB1 if Purdy is involved.
+4. Do NOT leave Jesse without a QB1 if Purdy is involved.
 
 TASK ({style["label"].upper()}): Generate exactly 5 trade scenarios from 5 DIFFERENT teams involving Jesse moving 1.10. {style["task_note"]}
-Each scenario must come from a different team. Be creative but realistic.
-For each trade, calculate: Jesse gives 1.10 + any additional assets (VAL total) → Jesse receives [assets] (VAL total). Ratio = receives/gives. Confirm it meets {style["label"]} requirement.
+Each scenario must come from a different team.
+For each trade, calculate: Jesse gives 1.10 + any additional assets (VAL total) → Jesse receives [assets] (VAL total). Ratio = receives/gives. Confirm it meets {style["label"]} requirement using FULL Combined Values.
 scenario_type for all trades: "Sell 1.10 — Package Deal" """
 
     draft_ctx_section = f"\n{draft_ctx}\n" if draft_ctx else ""
