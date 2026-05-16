@@ -284,13 +284,37 @@ def _load_draft_state_for_sim(teams: list) -> tuple[list, list, dict]:
         })
 
     trade_log = []
+
+    def _split_assets(s: str) -> list:
+        """Split a multi-asset trade string like '1.05 + Najee Harris' into parts."""
+        if not s:
+            return []
+        return [p.strip() for p in re.split(r"[+,]", s) if p.strip()]
+
     for t in (draft_state.get("tradeLog") or []):
-        to_id = _owner_to_team_id(t.get("to", ""))
-        if to_id:
+        # New bidirectional shape: {fromTeam, toTeam, gives, receives}
+        # Legacy shape: {to, gave, received} (Jesse implicit as from)
+        from_name = t.get("fromTeam") or "Jesse"
+        to_name = t.get("toTeam") or t.get("to", "")
+        gives = t.get("gives") or t.get("gave", "")
+        receives = t.get("receives") or t.get("received", "")
+        from_id = _owner_to_team_id(from_name) or 8
+        to_id = _owner_to_team_id(to_name)
+        if not to_id or not from_id or from_id == to_id:
+            continue
+        # Each direction is a series of asset transfers. Split multi-asset
+        # strings so simulate_draft_state can move each pick individually.
+        for asset in _split_assets(gives):
             trade_log.append({
-                "gave": t.get("gave", ""),
-                "from_team_id": 8,  # Jesse always the one trading from in this UI
+                "gave": asset,
+                "from_team_id": from_id,
                 "to_team_id": to_id,
+            })
+        for asset in _split_assets(receives):
+            trade_log.append({
+                "gave": asset,
+                "from_team_id": to_id,
+                "to_team_id": from_id,
             })
 
     summary["picks_count"] = len(draft_picks)

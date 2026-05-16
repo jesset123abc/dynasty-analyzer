@@ -924,23 +924,46 @@
       <button class="trade-tab"        id="tab-player" onclick="switchTradeTab('player', this)">Player Move</button>
     </div>
 
-    <!-- Pick Trade form -->
+    <!-- Pick Trade form (bidirectional — works for any pair of teams) -->
     <div id="trade-form-pick" class="trade-form">
       <div class="trade-form-row">
-        <label>Jesse gives (pick):</label>
-        <select id="trade-give-pick"></select>
+        <label>From team:</label>
+        <select id="trade-from-team">
+          <option value="Jesse">Jesse</option>
+          <option value="Patrick">Patrick</option>
+          <option value="Alexa">Alexa</option>
+          <option value="Alex">Alex</option>
+          <option value="Brad">Brad</option>
+          <option value="Lubin">Lubin</option>
+          <option value="Schueler">John</option>
+          <option value="Denton">Grant</option>
+          <option value="Driscoll">Driscoll</option>
+          <option value="Berkowitz">Berkowitz</option>
+        </select>
       </div>
       <div class="trade-form-row">
-        <label>Also gives (players):</label>
-        <input type="text" id="trade-give-players" placeholder="e.g. Najee Harris (optional)">
+        <label>Gives (pick + extras):</label>
+        <input type="text" id="trade-give-pick-txt" placeholder="e.g. 1.05 + Najee Harris">
+        <select id="trade-give-pick" style="display:none"></select>
       </div>
       <div class="trade-form-row">
         <label>To team:</label>
-        <input type="text" id="trade-to-team" placeholder="e.g. Brad">
+        <select id="trade-to-team">
+          <option value="Jesse">Jesse</option>
+          <option value="Patrick">Patrick</option>
+          <option value="Alexa">Alexa</option>
+          <option value="Alex">Alex</option>
+          <option value="Brad">Brad</option>
+          <option value="Lubin">Lubin</option>
+          <option value="Schueler">John</option>
+          <option value="Denton">Grant</option>
+          <option value="Driscoll">Driscoll</option>
+          <option value="Berkowitz">Berkowitz</option>
+        </select>
       </div>
       <div class="trade-form-row">
-        <label>Jesse receives:</label>
-        <input type="text" id="trade-receives" placeholder="e.g. Malik Nabers + 2027 1st">
+        <label>Receives:</label>
+        <input type="text" id="trade-receives" placeholder="e.g. 1.07 + 2027 2nd">
       </div>
       <button class="trade-log-btn" onclick="logPickTrade()">Log Pick Trade</button>
     </div>
@@ -2166,22 +2189,48 @@
   }
 
   function logPickTrade() {
-    const give        = document.getElementById('trade-give-pick').value;
-    const givePlayers = document.getElementById('trade-give-players').value.trim();
-    const to          = document.getElementById('trade-to-team').value.trim();
-    const received    = document.getElementById('trade-receives').value.trim();
-    if (!give || !to || !received) { alert('Please fill in pick, to team, and received fields.'); return; }
-
-    // Mark pick as traded
-    if (state.picksHeld.hasOwnProperty(give)) {
-      state.picksHeld[give] = false;
-    } else {
-      state.picksHeld.acquired = (state.picksHeld.acquired || []).filter(p => p.label !== give);
+    const fromTeam = document.getElementById('trade-from-team').value;
+    const toTeam   = document.getElementById('trade-to-team').value;
+    const gives    = document.getElementById('trade-give-pick-txt').value.trim();
+    const receives = document.getElementById('trade-receives').value.trim();
+    if (!fromTeam || !toTeam || !gives || !receives) {
+      alert('Please fill in from team, to team, gives, and receives.'); return;
     }
-    state.tradeLog.push({ id: Date.now(), gave: give, alsoGives: givePlayers || null, to, received });
+    if (fromTeam === toTeam) {
+      alert('From team and to team must differ.'); return;
+    }
 
-    document.getElementById('trade-give-players').value = '';
-    document.getElementById('trade-to-team').value = '';
+    // If Jesse is on one side, update Jesse's picksHeld for visual tracking
+    function _extractPickLabels(text) {
+      // Naive: split on '+' or ',', look for pick-like fragments
+      return text.split(/[+,]/).map(s => s.trim()).filter(s =>
+        /\d\.\d+/.test(s) || /20\d{2}\s+(1st|2nd|3rd|4th)/.test(s)
+      );
+    }
+    if (fromTeam === 'Jesse') {
+      _extractPickLabels(gives).forEach(p => {
+        if (state.picksHeld.hasOwnProperty(p)) state.picksHeld[p] = false;
+        state.picksHeld.acquired = (state.picksHeld.acquired || []).filter(x => x.label !== p);
+      });
+    }
+    if (toTeam === 'Jesse') {
+      state.picksHeld.acquired = state.picksHeld.acquired || [];
+      _extractPickLabels(receives).forEach(p => {
+        if (!state.picksHeld.acquired.find(x => x.label === p)) {
+          state.picksHeld.acquired.push({ label: p, from: fromTeam });
+        }
+      });
+    }
+
+    state.tradeLog.push({
+      id: Date.now(),
+      fromTeam, toTeam,
+      gives, receives,
+      // Backwards-compat fields for any legacy server logic still reading them
+      gave: gives, to: toTeam, received: receives,
+    });
+
+    document.getElementById('trade-give-pick-txt').value = '';
     document.getElementById('trade-receives').value = '';
     saveState();
     renderAll();
@@ -2243,13 +2292,17 @@
 
     histEl.innerHTML = allEntries.map(e => {
       if (e.type === 'pick') {
-        const givesStr = e.alsoGives ? `${e.gave} + ${e.alsoGives}` : e.gave;
+        // New bidirectional shape (fromTeam/toTeam/gives/receives) OR legacy
+        const fromT = e.fromTeam || 'Jesse';
+        const toT   = e.toTeam   || e.to;
+        const givesStr = e.gives || (e.alsoGives ? `${e.gave} + ${e.alsoGives}` : e.gave);
+        const recvStr  = e.receives || e.received;
         return `
           <div class="trade-entry">
-            <div class="trade-entry-icon">↗</div>
+            <div class="trade-entry-icon">↔</div>
             <div class="trade-entry-text">
-              <strong>${givesStr}</strong> → ${e.to}
-              <span class="trade-entry-detail">received: ${e.received}</span>
+              <strong>${fromT}</strong>: ${givesStr}
+              <span class="trade-entry-detail">→ <strong>${toT}</strong>: ${recvStr}</span>
             </div>
             <button class="trade-undo-btn" onclick="undoTrade(${e.id}, 'pick')">Undo</button>
           </div>`;
