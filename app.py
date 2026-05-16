@@ -884,13 +884,11 @@ In Superflex leagues, QBs are scarce and extremely valuable.
 Player values use a Combined Dynasty Value (0–9999) — DraftSharks (75%) + KTC Superflex (25%), each normalized.
 Pick values are KTC-calibrated.
 
-CRITICAL — TRADE MARKET REALITY:
-Combined Dynasty Values are reference points, NOT literal transaction prices. Real dynasty trades happen at negotiated discounts.
-- BACKUP QBs and DEPTH players trade at 40–60% of their KTC rank — most teams won't pay full price for a backup they don't need.
-- A team should NEVER trade away a position they are thin at. Before including a trade partner giving a player, verify that player is genuinely SURPLUS for them (check their roster above).
-- PICKS trade close to face value since they are liquid assets.
-- STARTERS at positions of need trade closer to full KTC value.
-Use the Combined Value rankings as relative tier guides, but build trades around what owners would REALISTICALLY give up.
+USE FULL COMBINED VALUES IN ALL TRADE MATH:
+- Always state each player's full Combined Dynasty Value as shown in the rankings — do NOT apply a "backup discount" or any other arbitrary haircut.
+- Picks trade close to their listed KTC value.
+- Realism comes from PICKING THE RIGHT TRADE PARTNERS, not from artificially deflating player values. A team should NEVER trade away a position they are thin at. Before including a trade partner giving up a player, verify that player is genuinely surplus for them (check their roster above). If the partner needs that player, find someone else.
+- A QB on a roster with multiple SF-quality QBs is still worth his full Combined Value; surplus only means he's more likely to be moved, not that his price drops.
 {draft_ctx_section}
 {style["value_rule"]}
 
