@@ -987,6 +987,15 @@
     <div class="banner-title" id="banner-title">YOUR PICK</div>
     <div class="banner-sub" id="banner-sub">Pick 1.01 · Jesse</div>
   </div>
+  <div id="sync-indicator" title="Whether your draft state is mirrored to the server" style="
+    display:inline-flex; align-items:center; gap:5px;
+    padding:3px 9px; border-radius:10px; font-size:.72rem; font-weight:600;
+    border:1px solid var(--border); background:var(--bg-input);
+    color:var(--muted); cursor:default; user-select:none;
+  ">
+    <span id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;"></span>
+    <span id="sync-label">Checking sync…</span>
+  </div>
   <button class="btn-claude" id="btn-claude" onclick="askClaude()" style="display:none">
     Ask Claude for Pick
   </button>
@@ -1182,8 +1191,45 @@
     state.rosterTrades = state.rosterTrades || [];
   }
 
+  function setSyncStatus(status, msg) {
+    // status: 'synced' | 'syncing' | 'desync' | 'unknown'
+    const colors = {
+      synced:  {dot: '#3fb950', text: '#3fb950', label: 'Synced'},
+      syncing: {dot: '#d29922', text: '#d29922', label: 'Syncing…'},
+      desync:  {dot: '#f85149', text: '#f85149', label: 'Out of sync'},
+      unknown: {dot: 'var(--muted)', text: 'var(--muted)', label: 'Checking sync…'},
+    };
+    const c = colors[status] || colors.unknown;
+    const dot = document.getElementById('sync-dot');
+    const lbl = document.getElementById('sync-label');
+    const wrap = document.getElementById('sync-indicator');
+    if (dot) dot.style.background = c.dot;
+    if (lbl) { lbl.textContent = msg || c.label; lbl.style.color = c.text; }
+    if (wrap) wrap.title = msg || `Draft state ${status}`;
+  }
+
+  async function pushStateToServer(s) {
+    setSyncStatus('syncing');
+    try {
+      const res = await fetch('/api/draft-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(s),
+      });
+      if (res.ok) {
+        const picks = (s.draftLog || []).length;
+        setSyncStatus('synced', picks ? `Synced · ${picks} picks` : 'Synced');
+      } else {
+        setSyncStatus('desync', 'Sync failed (HTTP ' + res.status + ')');
+      }
+    } catch(e) {
+      setSyncStatus('desync', 'Sync failed (network)');
+    }
+  }
+
   async function loadState() {
     // Try server first (cross-device sync), fall back to localStorage
+    setSyncStatus('syncing', 'Loading state…');
     let serverState = null;
     try {
       const res = await fetch('/api/draft-state');
@@ -1203,45 +1249,32 @@
     } catch(e) {}
 
     if (serverState) {
-      // Server has state — adopt it.
-      // BUT: if localStorage has MORE picks than server, server lost data
-      // (Railway restart) — re-sync from local to fix it.
       const serverPicks = (serverState.draftLog || []).length;
       const localPicks = (localState?.draftLog || []).length;
       if (localState && localPicks > serverPicks) {
+        // Local has more picks — server lost data (Railway restart). Re-sync up.
         console.log(`Local has ${localPicks} picks vs server ${serverPicks}, re-syncing local up`);
         state = localState;
-        // Fire-and-forget sync up
-        fetch('/api/draft-state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(state),
-        }).catch(() => {});
+        pushStateToServer(state);
       } else {
         state = serverState;
         localStorage.setItem(STATE_KEY, JSON.stringify(state));
+        setSyncStatus('synced', serverPicks ? `Synced · ${serverPicks} picks` : 'Synced');
       }
     } else if (localState) {
-      // Server has nothing but local does — push local up so other pages can see it
+      // Server has nothing but local does — push local up
       console.log('Server has no draft state, pushing local up');
       state = localState;
-      fetch('/api/draft-state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(state),
-      }).catch(() => {});
+      pushStateToServer(state);
+    } else {
+      setSyncStatus('synced', 'No picks yet');
     }
     applyStateDefaults();
   }
 
   function saveState() {
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
-    // Fire-and-forget sync to server
-    fetch('/api/draft-state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(state),
-    }).catch(() => {});
+    pushStateToServer(state);
   }
 
   function confirmReset() {
