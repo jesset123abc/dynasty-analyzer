@@ -486,12 +486,12 @@ Pick 1.01 (Jesse's own) projects to land Love. Pick 1.03 (Alex's) projects to la
 These picks carry immense dynasty value and should only be traded for established players of equivalent caliber (top-15 dynasty overall).
 
 === HOW TO USE COMBINED VALUES ===
-All player values use a Combined Dynasty Value (0–9999) — DraftSharks (75% weight) + KTC Superflex (25%), normalized to the same scale.
+All player values use a Combined Dynasty Value (0–9999) — DraftSharks (60% weight) + KTC Superflex (40%), normalized to the same scale.
 Pick values are KTC-calibrated.
 
 {style["value_rule"]}
 
-=== CURRENT DYNASTY RANKINGS (March 2026 — weighted DraftSharks (75%) + KTC Superflex (25%)) ===
+=== CURRENT DYNASTY RANKINGS (March 2026 — weighted DraftSharks (60%) + KTC Superflex (40%)) ===
 {rankings_block}
 
 {ds_notes_block}
@@ -941,7 +941,7 @@ Superflex (OP slot), NO tight end premium, 0.5 PPR, 10 teams.
 In Superflex leagues, QBs are scarce and extremely valuable.
 
 === VALUE RULES — READ CAREFULLY ===
-Player values use a Combined Dynasty Value (0–9999) — DraftSharks (75%) + KTC Superflex (25%), each normalized.
+Player values use a Combined Dynasty Value (0–9999) — DraftSharks (60%) + KTC Superflex (40%), each normalized.
 Pick values are KTC-calibrated.
 
 USE FULL COMBINED VALUES IN ALL TRADE MATH:
@@ -952,7 +952,7 @@ USE FULL COMBINED VALUES IN ALL TRADE MATH:
 {draft_ctx_section}
 {style["value_rule"]}
 
-=== CURRENT DYNASTY RANKINGS (weighted DraftSharks (75%) + KTC Superflex (25%)) ===
+=== CURRENT DYNASTY RANKINGS (weighted DraftSharks (60%) + KTC Superflex (40%)) ===
 {rankings_block}
 
 {ds_notes_block}
@@ -1073,7 +1073,7 @@ Superflex (OP slot), NO TE premium, 0.5 PPR, 10 teams.
 - 1.10 (Patrick's pick, held by Jesse) = KTC 3000
 - Jesse's QB1: Brock Purdy — must not be left without a QB1 in Superflex
 
-=== CURRENT DYNASTY RANKINGS (weighted DraftSharks (75%) + KTC Superflex (25%)) ===
+=== CURRENT DYNASTY RANKINGS (weighted DraftSharks (60%) + KTC Superflex (40%)) ===
 {rankings_block}
 
 {ds_notes_block}
@@ -1087,7 +1087,7 @@ Team: {my_team['name']} | Owner: Jesse
 === OFFER TO EVALUATE ===
 {offer_text}
 
-Evaluate this offer using Combined Dynasty Values (DraftSharks 75% + KTC 25%). For any player not in the rankings, estimate based on position/age and note it. For picks, use KTC values.
+Evaluate this offer using Combined Dynasty Values (DraftSharks 60% + KTC 40%). For any player not in the rankings, estimate based on position/age and note it. For picks, use KTC values.
 
 Return ONLY a single JSON object — no markdown, no code fences:
 {{
@@ -1264,7 +1264,7 @@ def chat():
     if not my_team:
         return jsonify({"error": "Team not found"}), 400
 
-    rankings = fetch_all_rankings()  # DS (75%) + KTC (25%) weighted
+    rankings = fetch_all_rankings()  # DS (60%) + KTC (40%) weighted
 
     # Build power rankings context (compact) — both modes
     def _format_pr(pr_list, label):
@@ -1432,8 +1432,8 @@ def chat():
         "You are an expert dynasty fantasy football advisor for Jesse's 10-team Superflex league (0.5 PPR, NO TE premium). It is May 2026 — the 2026 NFL Draft has happened and rookies have landing spots. Be direct, reference specific players/values and landing-spot context, keep responses concise and actionable. Take Jesse's strategy brief seriously — agree when his reasoning is sound, push back specifically when the rankings/data contradict his convictions.",
         """=== DATA SOURCES (be honest about confidence) ===
 Player values below are a weighted blend of TWO ranking sources with DraftSharks as the PRIMARY weight, then combined with production:
-  - DraftSharks dynasty composite — PRIMARY (75% weight; 250 players, post-NFL-Draft, analyst-driven, 1/3/5/10yr projections)
-  - KTC Superflex (25% weight; live, ~500 players, market-driven trade values)
+  - DraftSharks dynasty composite — PRIMARY (60% weight; 250 players, post-NFL-Draft, analyst-driven, 1/3/5/10yr projections)
+  - KTC Superflex (40% weight; live, ~500 players, market-driven trade values)
 Plus Sleeper 2025 per-game actuals + 2026 per-game projections (half-PPR).
 
 (FantasyCalc was previously a third source but systematically under-valued QBs in Superflex — KTC and DS price the top of the QB market closer to parity with elite RBs/WRs, FC priced them at ~60% — so it was dropped.)

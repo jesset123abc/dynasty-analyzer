@@ -5,7 +5,7 @@ Fetches dynasty player values from two sources:
 
 Both sources are normalized to a 0-9999 scale and combined with a weighted
 average where DraftSharks is the primary source:
-    DS = 75%, KTC = 25%
+    DS = 60%, KTC = 40%
 When DS doesn't have a player (rank > 250), KTC alone is used.
 FantasyCalc was previously included but systematically under-valued QBs in
 Superflex (its scale treated top QBs as ~60% of the top RB while KTC/DS
@@ -57,7 +57,7 @@ CACHE_TTL = 900  # seconds
 
 # ── Source weights (DraftSharks is primary; KTC is the market floor) ────────
 
-SOURCE_WEIGHTS = {"ds": 0.75, "ktc": 0.25}
+SOURCE_WEIGHTS = {"ds": 0.60, "ktc": 0.40}
 
 # Position-specific volatility priors (in value-point units) — these are the
 # minimum amount of intrinsic uncertainty a player at this position carries,
@@ -413,7 +413,7 @@ def fetch_all_rankings() -> dict:
     from DraftSharks' analyst composite, not borrowed from KTC's curve.
 
     Two combined values are produced:
-      - combined:        weighted avg DS:75% + KTC:25% (re-normalized when
+      - combined:        weighted avg DS:60% + KTC:40% (re-normalized when
                          only one source has the player).
       - market_combined: KTC-only — pure market, used by the BUY/SELL gap
                          where DS shouldn't appear on both sides of the
@@ -471,7 +471,7 @@ def fetch_all_rankings() -> dict:
         # market_combined = KTC only (pure market reference for BUY/SELL gap)
         market_combined = ktc_v
 
-        # Weighted combined: DS 75% + KTC 25%. Re-normalize if only one source.
+        # Weighted combined: DS 60% + KTC 40%. Re-normalize if only one source.
         weighted_pairs = []
         if ktc_v > 0: weighted_pairs.append((ktc_v, SOURCE_WEIGHTS["ktc"]))
         if ds_v > 0:  weighted_pairs.append((ds_v,  SOURCE_WEIGHTS["ds"]))
@@ -712,7 +712,7 @@ def build_rankings_summary(rankings: dict, limit: int = 40) -> str:
     )[:limit]
 
     header = (
-        f"TOP {limit} DYNASTY VALUES — weighted avg (DS=75%, KTC=25%). "
+        f"TOP {limit} DYNASTY VALUES — weighted avg (DS=60%, KTC=40%). "
         "DS value comes from DraftSharks' native '3D Value +' score "
         "(0-100, Josh Allen=100). KTC value is KTC Superflex normalized. "
         "Both columns are on the same 0-9999 scale but use independent "

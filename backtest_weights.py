@@ -133,8 +133,8 @@ def run_backtest(min_2025_games: int = 6) -> dict:
             "ktc": round(rec_ktc, 3),
         },
         "current_weights": {
-            "ds":  0.75,
-            "ktc": 0.25,
+            "ds":  0.60,
+            "ktc": 0.40,
         },
         "interpretation": (
             f"Spearman rank correlation with 2025 half-PPR fpts/game across "
