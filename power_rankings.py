@@ -3,10 +3,14 @@ Power Rankings engine for dynasty fantasy football.
 
 Two modes:
   "season"  — Who wins in 2026? Pure roster strength, no future assets.
-    50% Starter Quality, 30% Total Roster, 13% Positional Balance, 7% Depth
+    50% Starter Quality (VOR), 30% Total Roster, 13% Positional Balance, 7% Depth
   "dynasty" — Who is set up best long-term?
-    38% Starter Quality, 20% Total Roster, 8% Draft Capital,
-    12% Positional Balance, 8% Youth, 14% Prospect Value
+    28% Starter Quality (VOR), 20% Total Roster, 18% Draft Capital,
+    10% Positional Balance, 10% Youth, 14% Prospect Value
+
+  Dynasty weights are calibrated so picks/capital matter as much as
+  current starter strength — teams with stacked future picks (often
+  rebuilders) aren't punished for short-term roster weakness.
 
 All player values use the 0-9999 combined scale from dynasty_data.
 """
@@ -562,11 +566,11 @@ def compute_power_rankings(
             }
         else:  # dynasty
             s["power_score"] = round(
-                starter_n[i] * 0.38
+                starter_n[i] * 0.28
                 + total_n[i] * 0.20
-                + capital_n[i] * 0.08
-                + balance_n[i] * 0.12
-                + youth_n[i] * 0.08
+                + capital_n[i] * 0.18
+                + balance_n[i] * 0.10
+                + youth_n[i] * 0.10
                 + prospect_n[i] * 0.14,
                 1,
             )
