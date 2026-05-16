@@ -218,10 +218,53 @@ def _pos_players(roster: list, pos: str) -> list:
     return [p for p in roster if p["position"] == pos]
 
 
-def _compute_optimal_starters(all_players: list, rankings: dict) -> int:
-    """Compute total value of the best possible starting lineup."""
+def _compute_replacement_values(all_teams: list, rankings: dict) -> dict:
+    """
+    Compute replacement-level value per position by looking at the Nth-best
+    player at each position across the entire league.
+
+    N is calibrated to the number of starters at that position across all
+    10 teams in a Superflex lineup:
+      - QB:  ~20 (1 QB starter + most OP slots = SF QB premium)
+      - RB:  ~25 (2 starters + most FLEX slots → 2.5/team × 10)
+      - WR:  ~35 (3 starters + some FLEX → 3.5/team × 10)
+      - TE:  ~10 (1 starter × 10)
+
+    Replacement value = "what you could realistically pluck off waivers at
+    this position if your starter goes down." A starter's contribution is
+    measured as Value Over Replacement (VOR) — much fairer across positions.
+    """
+    pos_players = {"QB": [], "RB": [], "WR": [], "TE": []}
+    for team in all_teams:
+        for p in team.get("roster", []):
+            pos = p.get("position", "")
+            if pos in pos_players:
+                val = _player_value(p, rankings)
+                if val > 0:
+                    pos_players[pos].append(val)
+
+    targets = {"QB": 20, "RB": 25, "WR": 35, "TE": 10}
+    replacement = {}
+    for pos, vals in pos_players.items():
+        vals.sort(reverse=True)
+        n = targets[pos]
+        if len(vals) > n:
+            replacement[pos] = vals[n]  # the (n+1)th-best value
+        elif vals:
+            replacement[pos] = vals[-1]
+        else:
+            replacement[pos] = 0
+    return replacement
+
+
+def _compute_optimal_starters(all_players: list, rankings: dict, replacement: dict | None = None) -> int:
+    """
+    Compute total Value Over Replacement (VOR) of the optimal starting lineup.
+    Falls back to raw value sum if `replacement` is None (used by older
+    callers that haven't been updated).
+    """
     used = set()
-    starter_value = 0
+    starter_score = 0
     pos_top = {}
 
     for pos in _POSITIONS:
@@ -231,27 +274,50 @@ def _compute_optimal_starters(all_players: list, rankings: dict) -> int:
         )
         slots = _OPT_SLOTS[pos]
         for p in players[:slots]:
-            starter_value += _player_value(p, rankings)
+            v = _player_value(p, rankings)
+            if replacement is not None:
+                starter_score += max(0, v - replacement.get(pos, 0))
+            else:
+                starter_score += v
             used.add(id(p))
         pos_top[pos] = players
 
     # FLEX slot: best remaining RB/WR/TE
+    # Replacement for FLEX = average of RB/WR/TE replacements (player is
+    # competing against the next-best at any of those positions)
+    flex_repl = 0
+    if replacement is not None:
+        rb_r = replacement.get("RB", 0)
+        wr_r = replacement.get("WR", 0)
+        te_r = replacement.get("TE", 0)
+        flex_repl = (rb_r + wr_r + te_r) / 3
+
     flex_candidates = [
         p for pos in ("RB", "WR", "TE") for p in pos_top[pos]
         if id(p) not in used
     ]
     flex_candidates.sort(key=lambda p: _player_value(p, rankings), reverse=True)
     if flex_candidates:
-        starter_value += _player_value(flex_candidates[0], rankings)
+        v = _player_value(flex_candidates[0], rankings)
+        if replacement is not None:
+            starter_score += max(0, v - flex_repl)
+        else:
+            starter_score += v
         used.add(id(flex_candidates[0]))
 
-    # OP/SF slot: best remaining player (any position)
+    # OP/SF slot: best remaining player. In SF, this is usually a QB, so
+    # replacement is QB replacement.
+    op_repl = replacement.get("QB", 0) if replacement is not None else 0
     op_candidates = [p for p in all_players if id(p) not in used]
     op_candidates.sort(key=lambda p: _player_value(p, rankings), reverse=True)
     if op_candidates:
-        starter_value += _player_value(op_candidates[0], rankings)
+        v = _player_value(op_candidates[0], rankings)
+        if replacement is not None:
+            starter_score += max(0, v - op_repl)
+        else:
+            starter_score += v
 
-    return starter_value
+    return starter_score
 
 
 def _compute_prospect_value(all_players: list, rankings: dict) -> int:
@@ -328,6 +394,12 @@ def compute_power_rankings(
         sea_ranks = season_rankings if season_rankings else rankings
         dynamic_pick_vals = _compute_dynamic_pick_values(teams, sea_ranks)
 
+    # Compute league-wide replacement values once — used for VOR scoring.
+    # This properly weights starter contributions by positional scarcity:
+    # a 7000-value QB in SF (where replacement is ~3000) contributes 4000;
+    # a 7000-value WR (where replacement is ~2500) contributes 4500.
+    replacement = _compute_replacement_values(teams, rankings)
+
     scored = []
 
     # Cap rosters to league-min size so low-value dart throws don't
@@ -352,7 +424,7 @@ def compute_power_rankings(
             all_players, key=lambda p: _player_value(p, rankings), reverse=True
         )[:min_roster]
 
-        starter_value = _compute_optimal_starters(all_players, rankings)
+        starter_value = _compute_optimal_starters(all_players, rankings, replacement)
         total_value = sum(_player_value(p, rankings) for p in all_players)
         # Count all picks team still holds. When apply_draft_state=True, also
         # subtract picks already used in the live rookie draft (their value
