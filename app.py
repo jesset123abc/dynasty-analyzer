@@ -433,12 +433,12 @@ Pick 1.01 (Jesse's own) projects to land Love. Pick 1.03 (Alex's) projects to la
 These picks carry immense dynasty value and should only be traded for established players of equivalent caliber (top-15 dynasty overall).
 
 === HOW TO USE COMBINED VALUES ===
-All player values use a Combined Dynasty Value (0–9999) — the average of KTC, Dynasty Daddy, and FantasyCalc, each normalized to the same scale.
+All player values use a Combined Dynasty Value (0–9999) — DraftSharks (75% weight) + KTC Superflex (25%), normalized to the same scale.
 Pick values are KTC-calibrated.
 
 {style["value_rule"]}
 
-=== CURRENT DYNASTY RANKINGS (March 2026 — weighted DraftSharks (60%) + KTC (20%) + FantasyCalc (20%)) ===
+=== CURRENT DYNASTY RANKINGS (March 2026 — weighted DraftSharks (75%) + KTC Superflex (25%)) ===
 {rankings_block}
 
 {ds_notes_block}
@@ -536,7 +536,7 @@ def draft_board():
         teams = []
     owners = [t["owner"].split()[0] for t in teams]
 
-    # Enrich rookies with live combined values (KTC + Dynasty Daddy + FantasyCalc)
+    # Enrich rookies with live combined values (DraftSharks + KTC)
     rankings = fetch_all_rankings()
     enriched = []
     for r in ROOKIES_2026:
@@ -881,7 +881,7 @@ Superflex (OP slot), NO tight end premium, 0.5 PPR, 10 teams.
 In Superflex leagues, QBs are scarce and extremely valuable.
 
 === VALUE RULES — READ CAREFULLY ===
-Player values use a Combined Dynasty Value (0–9999) — averaged from KTC, Dynasty Daddy, and FantasyCalc (each normalized).
+Player values use a Combined Dynasty Value (0–9999) — DraftSharks (75%) + KTC Superflex (25%), each normalized.
 Pick values are KTC-calibrated.
 
 CRITICAL — TRADE MARKET REALITY:
@@ -894,7 +894,7 @@ Use the Combined Value rankings as relative tier guides, but build trades around
 {draft_ctx_section}
 {style["value_rule"]}
 
-=== CURRENT DYNASTY RANKINGS (weighted DraftSharks (60%) + KTC (20%) + FantasyCalc (20%)) ===
+=== CURRENT DYNASTY RANKINGS (weighted DraftSharks (75%) + KTC Superflex (25%)) ===
 {rankings_block}
 
 {ds_notes_block}
@@ -1015,7 +1015,7 @@ Superflex (OP slot), NO TE premium, 0.5 PPR, 10 teams.
 - 1.10 (Patrick's pick, held by Jesse) = KTC 3000
 - Jesse's QB1: Brock Purdy — must not be left without a QB1 in Superflex
 
-=== CURRENT DYNASTY RANKINGS (weighted DraftSharks (60%) + KTC (20%) + FantasyCalc (20%)) ===
+=== CURRENT DYNASTY RANKINGS (weighted DraftSharks (75%) + KTC Superflex (25%)) ===
 {rankings_block}
 
 {ds_notes_block}
@@ -1029,7 +1029,7 @@ Team: {my_team['name']} | Owner: Jesse
 === OFFER TO EVALUATE ===
 {offer_text}
 
-Evaluate this offer using Combined Dynasty Values (averaged from KTC/DynastyDaddy/FantasyCalc). For any player not in the rankings, estimate based on position/age and note it. For picks, use KTC values.
+Evaluate this offer using Combined Dynasty Values (DraftSharks 75% + KTC 25%). For any player not in the rankings, estimate based on position/age and note it. For picks, use KTC values.
 
 Return ONLY a single JSON object — no markdown, no code fences:
 {{
@@ -1177,7 +1177,7 @@ def _build_advisor_buy_sell_block(rankings: dict, teams: list, my_team_id: int) 
     parts = ["=== DRAFTSHARKS EXPERT vs MARKET — TOP GAPS ==="]
     parts.append(
         "Percentile-scaled (100=best). DS=DraftSharks rank, "
-        "Mkt=KTC+FantasyCalc rank (DS excluded so gap stays clean). "
+        "Mkt=KTC-only rank (DS excluded so gap stays clean). "
         "Positive gap = DS values higher than market (BUY signal). "
         "Negative gap = market values higher than DS (SELL signal)."
     )
@@ -1208,7 +1208,7 @@ def chat():
     if not my_team:
         return jsonify({"error": "Team not found"}), 400
 
-    rankings = fetch_all_rankings()  # raw market: KTC + FantasyCalc averaged
+    rankings = fetch_all_rankings()  # DS (75%) + KTC (25%) weighted
 
     # Build power rankings context (compact) — both modes
     def _format_pr(pr_list, label):
@@ -1375,14 +1375,15 @@ def chat():
     static_sections = [
         "You are an expert dynasty fantasy football advisor for Jesse's 10-team Superflex league (0.5 PPR, NO TE premium). It is May 2026 — the 2026 NFL Draft has happened and rookies have landing spots. Be direct, reference specific players/values and landing-spot context, keep responses concise and actionable. Take Jesse's strategy brief seriously — agree when his reasoning is sound, push back specifically when the rankings/data contradict his convictions.",
         """=== DATA SOURCES (be honest about confidence) ===
-Player values below are triangulated from THREE ranking sources with DraftSharks as the PRIMARY weight, then blended with production:
-  - DraftSharks dynasty composite — PRIMARY (60% weight; 250 players, post-NFL-Draft, analyst-driven, 1/3/5/10yr projections)
-  - KTC Superflex (20% weight; live, ~500 players, market-driven trade values)
-  - FantasyCalc Superflex 10-team 0.5 PPR (20% weight; live API, crowd-sourced market)
+Player values below are a weighted blend of TWO ranking sources with DraftSharks as the PRIMARY weight, then combined with production:
+  - DraftSharks dynasty composite — PRIMARY (75% weight; 250 players, post-NFL-Draft, analyst-driven, 1/3/5/10yr projections)
+  - KTC Superflex (25% weight; live, ~500 players, market-driven trade values)
 Plus Sleeper 2025 per-game actuals + 2026 per-game projections (half-PPR).
 
-When a player isn't in DraftSharks (rank > 250), the KTC+FC weights re-normalize to fill the gap. Each ranking row shows the source breakdown (KTC:X FC:Y DS:Z) so source disagreement is visible. The "BUY/SELL gap" block below compares DS to KTC+FC (DS is excluded from the "market" side of that comparison so the gap stays meaningful) — call out the methodology difference: KTC/FC are market prices, DraftSharks is analyst opinion with multi-year projections.""",
-        f"=== DYNASTY RANKINGS (top 50, blended: 65% triangulated (DS-weighted) + 15% 2025 per-game + 20% 2026 per-game proj) ===\n{rankings_block}",
+(FantasyCalc was previously a third source but systematically under-valued QBs in Superflex — KTC and DS price the top of the QB market closer to parity with elite RBs/WRs, FC priced them at ~60% — so it was dropped.)
+
+When a player isn't in DraftSharks (rank > 250), KTC alone is used. Each ranking row shows the source breakdown (KTC:X DS:Y) so source disagreement is visible. The "BUY/SELL gap" block below compares DS to KTC alone (DS is excluded from the "market" side of that comparison so the gap stays meaningful) — call out the methodology difference: KTC is market price, DraftSharks is analyst opinion with multi-year projections.""",
+        f"=== DYNASTY RANKINGS (top 50, blended: 65% DS/KTC weighted + 15% 2025 per-game + 20% 2026 per-game proj) ===\n{rankings_block}",
         f"=== 2026 ROOKIES (post-draft, with NFL landing spots) ===\n{rookie_block}",
         f"=== POWER RANKINGS (Dynasty + 2026 Season) ===\n{power_rankings_block}",
         buy_sell_block,

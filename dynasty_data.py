@@ -1,14 +1,15 @@
 """
-Fetches dynasty player values from three sources:
-- KTC Superflex (live scrape of keeptradecut.com/dynasty-rankings)
-- FantasyCalc Superflex 10-team 0.5 PPR (free JSON API)
+Fetches dynasty player values from two sources:
 - DraftSharks dynasty composite (CSV, refreshed manually) — PRIMARY
+- KTC Superflex (live scrape of keeptradecut.com/dynasty-rankings)
 
-All three are normalized to a 0-9999 scale and combined with a weighted
+Both sources are normalized to a 0-9999 scale and combined with a weighted
 average where DraftSharks is the primary source:
-    DS = 60%, KTC = 20%, FC = 20%
-When a source is missing for a player, the remaining sources' weights are
-re-normalized so the combined value isn't penalized for incomplete coverage.
+    DS = 75%, KTC = 25%
+When DS doesn't have a player (rank > 250), KTC alone is used.
+FantasyCalc was previously included but systematically under-valued QBs in
+Superflex (its scale treated top QBs as ~60% of the top RB while KTC/DS
+priced them closer to parity), so it was dropped.
 
 For each player we also expose "market_combined" — the KTC+FC-only average,
 used by the BUY/SELL gap signal where mixing DS into the market would
@@ -54,9 +55,9 @@ _rookie_cache: dict = {"data": None, "ts": 0.0}
 _picks_cache: dict = {"data": None, "ts": 0.0}
 CACHE_TTL = 900  # seconds
 
-# ── Source weights (DraftSharks is primary; KTC/FC are the market floor) ─────
+# ── Source weights (DraftSharks is primary; KTC is the market floor) ────────
 
-SOURCE_WEIGHTS = {"ds": 0.60, "ktc": 0.20, "fc": 0.20}
+SOURCE_WEIGHTS = {"ds": 0.75, "ktc": 0.25}
 
 
 # ---------------------------------------------------------------------------
@@ -158,12 +159,33 @@ PICK_VALUES = {
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
+# Common nickname → canonical-name aliases. Keys are normalized form of the
+# nickname (lowercased, no periods); values are the canonical lowercase name
+# the rest of the code uses. Add new entries when a player appears split
+# across sources (e.g., KTC says "Cam Ward", DraftSharks says "Cameron Ward").
+_NAME_ALIASES = {
+    "cam ward": "cameron ward",
+    "dj moore": "dj moore",     # canonical spelling (DJ vs D.J.)
+    "tj hockenson": "tj hockenson",
+    "aj brown": "aj brown",
+    "tj watt": "tj watt",
+    "cj stroud": "cj stroud",
+    "rj harvey": "rj harvey",
+    "kc concepcion": "kc concepcion",
+    "jk dobbins": "jk dobbins",
+}
+
+
 def _normalize(name: str) -> str:
-    """Strip accents and name suffixes for fuzzy cross-source matching."""
+    """Strip accents, periods, and name suffixes for fuzzy cross-source matching.
+    Applies _NAME_ALIASES to unify nickname variants (Cam ↔ Cameron, etc.).
+    """
     name = unicodedata.normalize("NFD", name)
     name = "".join(c for c in name if unicodedata.category(c) != "Mn")
     name = re.sub(r"\s+(Jr\.?|Sr\.?|III|II|IV|V)$", "", name, flags=re.IGNORECASE)
-    return name.lower().strip()
+    name = name.replace(".", "")  # "D.J. Moore" → "DJ Moore"
+    name = re.sub(r"\s+", " ", name).lower().strip()
+    return _NAME_ALIASES.get(name, name)
 
 
 def _extract_js_array(html: str, var_name: str):
@@ -368,7 +390,7 @@ def fetch_pick_market() -> dict:
 
 def fetch_all_rankings() -> dict:
     """
-    Triangulate KTC + FantasyCalc + DraftSharks Superflex dynasty values.
+    Triangulate KTC + DraftSharks Superflex dynasty values.
 
     Each source is normalized to 0-9999. DraftSharks publishes ranks only
     (not values), so we map each DS rank to the value sitting at that rank
@@ -376,38 +398,32 @@ def fetch_all_rankings() -> dict:
     market-driven value curve while letting DS contribute its rank opinion.
 
     Two combined values are produced:
-      - combined:        weighted avg using SOURCE_WEIGHTS (DS primary at 60%,
-                         KTC/FC at 20% each). Weights re-normalize when a
-                         source is missing so coverage gaps don't deflate the
-                         combined score.
-      - market_combined: equal-weighted avg of KTC + FC only — pure market,
-                         used by the BUY/SELL gap where DS shouldn't appear
-                         on both sides of the comparison.
+      - combined:        weighted avg DS:75% + KTC:25% (re-normalized when
+                         only one source has the player).
+      - market_combined: KTC-only — pure market, used by the BUY/SELL gap
+                         where DS shouldn't appear on both sides of the
+                         comparison.
 
     Returns dict keyed by normalized player name:
       {
         "name":            str,
-        "combined":        int,    # avg of available sources (0-9999)
-        "market_combined": int,    # KTC+FC only (excludes DS)
+        "combined":        int,    # weighted avg of available sources (0-9999)
+        "market_combined": int,    # KTC only (excludes DS)
         "ktc":             int,
-        "fc":              int,
         "ds":              int,    # DS-rank mapped onto KTC value scale
         "ds_rank":         int,    # DraftSharks rank (1-N, lower=better)
-        "ds_proj_1yr":     float,  # DS 1-year half-PPR projection
+        "ds_proj_1yr":     float,
         "ds_proj_3yr":     float,
         "ds_proj_5yr":     float,
         "ds_proj_10yr":    float,
-        "ds_analysis":     str,    # DS written analysis (may be long)
-        "sources":         list,   # ['ktc', 'fc', 'ds'] subset
+        "ds_analysis":     str,
+        "sources":         list,   # ['ktc', 'ds'] subset
         "rank":            int,    # overall rank by combined
         "market_rank":     int,    # overall rank by market_combined
         "pos_rank":        int,
         "ktc_rank":        int,
-        "fc_rank":         int,
-        "fc_trend_30d":    int,
         "age":             float,
         "position":        str,
-        "sleeper_id":      str|None,
       }
     """
     global _cache
@@ -416,7 +432,6 @@ def fetch_all_rankings() -> dict:
         return _cache["data"]
 
     ktc_players, _picks = _fetch_ktc()
-    fc_players = _fetch_fantasycalc()
     ds_players = _fetch_draftsharks()
 
     # Build a sorted KTC value list so we can map DS ranks onto the KTC value scale
@@ -431,27 +446,23 @@ def fetch_all_rankings() -> dict:
         idx = min(rank - 1, len(ktc_values_sorted) - 1)
         return ktc_values_sorted[idx]
 
-    all_keys = set(ktc_players) | set(fc_players) | set(ds_players)
+    all_keys = set(ktc_players) | set(ds_players)
 
     result: dict = {}
     for key in all_keys:
         k = ktc_players.get(key, {})
-        f = fc_players.get(key, {})
         d = ds_players.get(key, {})
 
         ktc_v = k.get("ktc", 0)
-        fc_v = f.get("fc", 0)
         ds_rank = d.get("ds_rank", 0) if d else 0
         ds_v = _ds_rank_to_value(ds_rank) if ds_rank else 0
 
-        market_vals = [v for v in (ktc_v, fc_v) if v > 0]
-        market_combined = round(sum(market_vals) / len(market_vals)) if market_vals else 0
+        # market_combined = KTC only (pure market reference for BUY/SELL gap)
+        market_combined = ktc_v
 
-        # Weighted combined: DS at 60%, KTC + FC at 20% each. Re-normalize
-        # weights across only the sources that have this player.
+        # Weighted combined: DS 75% + KTC 25%. Re-normalize if only one source.
         weighted_pairs = []
         if ktc_v > 0: weighted_pairs.append((ktc_v, SOURCE_WEIGHTS["ktc"]))
-        if fc_v > 0:  weighted_pairs.append((fc_v,  SOURCE_WEIGHTS["fc"]))
         if ds_v > 0:  weighted_pairs.append((ds_v,  SOURCE_WEIGHTS["ds"]))
         if weighted_pairs:
             wsum = sum(w for _, w in weighted_pairs)
@@ -461,7 +472,6 @@ def fetch_all_rankings() -> dict:
 
         sources = []
         if ktc_v > 0: sources.append("ktc")
-        if fc_v > 0:  sources.append("fc")
         if ds_v > 0:  sources.append("ds")
 
         result[key] = {
@@ -469,7 +479,6 @@ def fetch_all_rankings() -> dict:
             "combined":        combined,
             "market_combined": market_combined,
             "ktc":             ktc_v,
-            "fc":              fc_v,
             "ds":              ds_v,
             "ds_rank":         ds_rank,
             "ds_proj_1yr":     d.get("ds_proj_1yr", 0) if d else 0,
@@ -479,14 +488,11 @@ def fetch_all_rankings() -> dict:
             "ds_analysis":     d.get("ds_analysis", "") if d else "",
             "sources":         sources,
             "ktc_rank":        k.get("ktc_rank", 999),
-            "fc_rank":         f.get("fc_rank", 999),
-            "fc_trend_30d":    f.get("fc_trend_30d", 0),
             "age":             k.get("age") or 0,
             "position":        k.get("position", "") or (d.get("ds_pos", "") if d else ""),
-            "sleeper_id":      f.get("sleeper_id"),
         }
 
-    # Re-rank by combined (3-source) and assign positional ranks
+    # Re-rank by combined (DS+KTC weighted) and assign positional ranks
     sorted_combined = sorted(result.items(), key=lambda x: x[1]["combined"], reverse=True)
     pos_counters: dict[str, int] = {}
     for new_rank, (key, info) in enumerate(sorted_combined, 1):
@@ -496,7 +502,7 @@ def fetch_all_rankings() -> dict:
             pos_counters[pos] = pos_counters.get(pos, 0) + 1
             result[key]["pos_rank"] = pos_counters[pos]
 
-    # Independent rank by market_combined (KTC+FC only) for BUY/SELL gap calcs
+    # Independent rank by market_combined (KTC only) for BUY/SELL gap calcs
     sorted_market = sorted(result.items(), key=lambda x: x[1]["market_combined"], reverse=True)
     for new_rank, (key, _) in enumerate(sorted_market, 1):
         result[key]["market_rank"] = new_rank
@@ -641,28 +647,24 @@ def build_rankings_summary(rankings: dict, limit: int = 40) -> str:
     )[:limit]
 
     header = (
-        f"TOP {limit} DYNASTY VALUES — weighted avg (DS=60%, KTC=20%, FC=20%) "
-        "of DraftSharks dynasty (PRIMARY), KTC Superflex, and FantasyCalc SF "
-        "10-team 0.5PPR (each 0-9999). KTC/FC/DS columns show source "
-        "disagreement; trend30d is FC 30-day movement (positive = rising); "
-        "dsR is DraftSharks rank."
+        f"TOP {limit} DYNASTY VALUES — weighted avg (DS=75%, KTC=25%) of "
+        "DraftSharks dynasty composite (PRIMARY) and KTC Superflex "
+        "(each 0-9999). KTC/DS columns show source disagreement; dsR is "
+        "DraftSharks rank."
     )
 
     lines = [header]
     for name_key, info in top:
         age_str = f", age {info['age']:.0f}" if info.get("age") else ""
         ktc = info.get("ktc", 0)
-        fc = info.get("fc", 0)
         ds = info.get("ds", 0)
         ds_rank = info.get("ds_rank", 0)
-        trend = info.get("fc_trend_30d", 0)
-        trend_str = f" trend30d:{trend:+d}" if trend else ""
         ds_str = f" DS:{ds}(R{ds_rank})" if ds_rank else " DS:—"
         sources = info.get("sources", [])
-        src_warn = "" if len(sources) == 3 else f" [src:{','.join(sources) or 'none'}]"
+        src_warn = "" if len(sources) == 2 else f" [src:{','.join(sources) or 'none'}]"
         lines.append(
             f"  VAL:{info['combined']:>5}  #{info.get('rank', 999):>3} {info['position']:<3}  "
             f"{name_key.title()}{age_str}  "
-            f"(KTC:{ktc} FC:{fc}{ds_str}{trend_str}{src_warn})"
+            f"(KTC:{ktc}{ds_str}{src_warn})"
         )
     return "\n".join(lines)
