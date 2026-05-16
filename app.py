@@ -1120,11 +1120,16 @@ def _build_advisor_buy_sell_block(rankings: dict, teams: list, my_team_id: int) 
     if not rankings:
         return ""
 
-    # Pure RAW VALUE comparison — both axes are independent normalized values
-    # on the 0-9999 scale (KTC: superflex value; DS: 3D Value score). No
-    # percentile transform, no weighted blend.
+    # Regression-residual signal: fit DS = a*KTC + b across players above
+    # KTC=1500, then flag players whose actual DS sits >1.5σ from the
+    # regression line. This isolates real source disagreement from
+    # systematic curve-shape differences between KTC and DS's 3D Value.
+    signals = _compute_regression_signals(rankings, min_ktc=1500)
+    if not signals:
+        return ""
+
     buys, sells = [], []
-    THRESHOLD = 500  # value points (~5% of 9999 scale)
+    THRESHOLD = 1.5  # standard deviations
     for team in teams:
         is_mine = team["id"] == my_team_id
         first = team["owner"].split()[0]
@@ -1132,26 +1137,26 @@ def _build_advisor_buy_sell_block(rankings: dict, teams: list, my_team_id: int) 
         for p in team["roster"]:
             if p.get("position") not in ("QB", "RB", "WR", "TE"):
                 continue
-            r = rankings.get(normalize_name(p["name"]), {})
-            ktc_v = r.get("ktc", 0)
-            ds_v = r.get("ds", 0)
-            if ktc_v < 100 or ds_v < 100:
+            nkey = normalize_name(p["name"])
+            sig = signals.get(nkey)
+            if not sig:
                 continue
-            gap = ds_v - ktc_v
-            if abs(gap) < THRESHOLD:
+            z = sig["z"]
+            if abs(z) < THRESHOLD:
                 continue
-            (buys if gap > 0 else sells).append({
+            r = rankings.get(nkey, {})
+            (buys if z > 0 else sells).append({
                 "name":    p["name"],
                 "pos":     p["position"],
                 "owner":   "Jesse" if is_mine else owner,
-                "ds_val":  ds_v,
-                "ktc_val": ktc_v,
-                "gap":     gap,
+                "ds_val":  r.get("ds", 0),
+                "ktc_val": r.get("ktc", 0),
+                "z":       round(z, 2),
                 "mine":    is_mine,
             })
 
-    buys.sort(key=lambda x: -x["gap"])
-    sells.sort(key=lambda x: x["gap"])
+    buys.sort(key=lambda x: -x["z"])
+    sells.sort(key=lambda x: x["z"])
 
     def _fmt(rows, label):
         if not rows:
@@ -1159,25 +1164,28 @@ def _build_advisor_buy_sell_block(rankings: dict, teams: list, my_team_id: int) 
         out = [f"  {label}:"]
         for r in rows[:12]:
             j = " <<JESSE" if r["mine"] else ""
-            sign = "+" if r["gap"] > 0 else ""
+            sign = "+" if r["z"] > 0 else ""
             out.append(
                 f"    {r['name']}({r['pos']}) {r['owner']}: "
                 f"DS:{r['ds_val']} vs KTC:{r['ktc_val']} "
-                f"({sign}{r['gap']}){j}"
+                f"z={sign}{r['z']}σ{j}"
             )
         return "\n".join(out)
 
-    parts = ["=== DRAFTSHARKS vs KTC — RAW VALUE GAPS ==="]
+    parts = ["=== DRAFTSHARKS vs KTC — REGRESSION-RESIDUAL SIGNALS ==="]
     parts.append(
-        "Both values on the same 0-9999 scale (KTC = superflex value, "
-        "DS = 3D Value score). No weighting, no percentile transform — "
-        "pure source disagreement. Positive gap = DS values higher than "
-        "KTC (BUY signal — analysts ahead of market). Negative gap = "
-        "KTC values higher than DS (SELL signal — market may be "
-        "overvaluing vs analyst view)."
+        "Both sources normalized to 0-9999 (KTC = superflex value; DS = "
+        "3D Value composite). To isolate REAL source disagreement from "
+        "systematic curve-shape differences, we fit DS = a*KTC + b across "
+        "all players (KTC>=1500), compute the residual per player, and "
+        "standardize to z-scores. |z|>1.5σ surfaces the meaningful "
+        "disagreements. Positive z = DS values player higher than KTC "
+        "predicts (BUY — analyst sees something market doesn't). "
+        "Negative z = DS values lower than KTC predicts (SELL — market "
+        "may be overrating relative to DS view)."
     )
-    buys_block = _fmt(buys, "BUY candidates (DS > KTC)")
-    sells_block = _fmt(sells, "SELL candidates (KTC > DS)")
+    buys_block = _fmt(buys, "BUY candidates (DS > KTC-implied)")
+    sells_block = _fmt(sells, "SELL candidates (DS < KTC-implied)")
     if buys_block:
         parts.append(buys_block)
     if sells_block:
@@ -1974,6 +1982,60 @@ import csv
 _DRAFTSHARKS_FILE = os.path.join(os.path.dirname(__file__), "ofantasy_rankings.csv")
 
 
+def _compute_regression_signals(rankings: dict, min_ktc: int = 1500) -> dict:
+    """
+    Fit DS = a*KTC + b across players with both source values above min_ktc,
+    compute per-player residuals and standardized z-scores.
+
+    z = (actual_DS - predicted_DS) / σ(residuals)
+
+    This isolates player-specific source disagreement from systematic
+    differences in the two sources' curves (scale, shape, methodology
+    biases all get absorbed into the slope/intercept).
+
+    min_ktc=1500 filters out the deep-bench regime where the regression
+    line predicts negative DS values and produces meaningless residuals.
+
+    Returns {norm_name: {"z": float, "residual": float, "predicted_ds": float}}
+    """
+    pairs = []
+    for nkey, p in rankings.items():
+        ktc = p.get("ktc", 0)
+        ds = p.get("ds", 0)
+        if ktc >= min_ktc and ds > 0:
+            pairs.append((nkey, ktc, ds))
+
+    if len(pairs) < 10:
+        return {}
+
+    xs = [p[1] for p in pairs]
+    ys = [p[2] for p in pairs]
+    n = len(pairs)
+
+    mx, my = sum(xs) / n, sum(ys) / n
+    num = sum((xs[i] - mx) * (ys[i] - my) for i in range(n))
+    den = sum((xs[i] - mx) ** 2 for i in range(n))
+    if den == 0:
+        return {}
+    a = num / den
+    b = my - a * mx
+
+    resids = [ys[i] - (a * xs[i] + b) for i in range(n)]
+    mr = sum(resids) / n
+    sigma = (sum((r - mr) ** 2 for r in resids) / (n - 1)) ** 0.5 if n > 1 else 1.0
+    if sigma == 0:
+        return {}
+
+    return {
+        pairs[i][0]: {
+            "z":            resids[i] / sigma,
+            "residual":     resids[i],
+            "predicted_ds": a * xs[i] + b,
+        }
+        for i in range(n)
+    }
+
+
 def _rank_to_percentile(rank: float, total: int) -> float:
     """Convert rank (1=best) to percentile score (100=best, 0=worst)."""
     if total <= 1:
@@ -2025,8 +2087,12 @@ def buy_sell_page():
         teams = parse_league(data)
         rankings = fetch_all_rankings()
         my_team_id = int(request.args.get("team_id", 8))
-        # Default threshold = 500 value points (about 5% of the 0-9999 scale)
-        threshold = float(request.args.get("threshold", 500))
+        # Default threshold = 1.5σ on standardized residuals.
+        # |z|>1.5 ≈ top 13% of disagreement; |z|>2.0 ≈ top 5%.
+        threshold = float(request.args.get("threshold", 1.5))
+
+        # Fit DS = a*KTC + b across all eligible players, compute z-scores
+        signals = _compute_regression_signals(rankings, min_ktc=1500)
 
         buy_signals = []
         sell_signals = []
@@ -2039,28 +2105,28 @@ def buy_sell_page():
             for p in team["roster"]:
                 nkey = normalize_name(p["name"])
                 r = rankings.get(nkey, {})
-                # Pure RAW VALUE comparison — never weighted, never percentile.
-                # Both axes are independent normalized values on the 0-9999 scale.
-                ktc_val = r.get("ktc", 0)              # KTC superflex value
-                ds_val = r.get("ds", 0)                # DS 3D Value normalized
+                sig = signals.get(nkey)
+                if not sig:
+                    continue  # not in regression universe (deep bench or missing source)
+
+                ktc_val = r.get("ktc", 0)
+                ds_val = r.get("ds", 0)
                 ds_rank = r.get("ds_rank", 0)
                 pos = p.get("position", "")
                 age = r.get("age", 0)
+                z = sig["z"]
 
                 if pos not in ("QB", "RB", "WR", "TE"):
                     continue
-                if ktc_val < 100 or ds_val < 100:
-                    continue  # need both sources to compute a meaningful gap
 
-                # Raw value gap: positive = DS values higher than KTC (BUY)
-                gap = ds_val - ktc_val
-
-                # Lower threshold for own team so holds/sells always surface
-                min_gap = threshold * 0.5 if is_my_team else threshold
-                if abs(gap) < min_gap:
+                # Looser threshold for own team so holds/sells always surface
+                min_z = threshold * 0.6 if is_my_team else threshold
+                if abs(z) < min_z:
                     continue
 
                 source_str = f"DS #{ds_rank}" if ds_rank else ""
+                z_rounded = round(z, 2)
+                raw_gap = ds_val - ktc_val
 
                 entry = {
                     "name": p["name"],
@@ -2070,61 +2136,64 @@ def buy_sell_page():
                     "owner": display_owner,
                     "is_my_team": is_my_team,
                     "ktc_value": ktc_val,
-                    "ktc_score": ktc_val,       # template still reads ktc_score
-                    "expert_score": ds_val,     # template still reads expert_score
-                    "gap": abs(gap),
+                    "ktc_score": ktc_val,       # template field — shows KTC raw value
+                    "expert_score": ds_val,     # template field — shows DS raw value
+                    "gap": z_rounded,           # template field — now z-score (σ units)
+                    "raw_gap": raw_gap,
                     "source_detail": source_str,
                     "analysis": r.get("ds_analysis", ""),
                 }
 
-                if gap > 0:
-                    # BUY/HOLD: DS values higher than KTC market
-                    # Skip aging vets (28+ for RB, 30+ for WR/TE, 32+ for QB)
-                    # unless they're on my team (still useful to know they're undervalued)
+                if z > 0:
+                    # BUY: DS values significantly higher than the regression predicts
                     age_cutoffs = {"RB": 28, "WR": 30, "TE": 31, "QB": 32}
                     max_age = age_cutoffs.get(pos, 30)
                     if age and age >= max_age and not is_my_team:
-                        continue  # not a dynasty buy target
+                        continue
 
                     tags = []
                     if is_my_team:
                         tags.append("HOLD")
                     elif age and age < 25:
-                        if gap >= 1000:
+                        if abs(z) >= 2.5:
                             tags.append("BREAKOUT CANDIDATE")
                         else:
                             tags.append("YOUNG VALUE")
-                    elif gap >= 1500:
+                    elif abs(z) >= 2.5:
                         tags.append("UNDERVALUED")
-                    else:
+                    elif abs(z) >= 2.0:
                         tags.append("VALUE BUY")
+                    else:
+                        tags.append("BUY WATCH")
                     entry["tags"] = tags
                     entry["reason"] = (
-                        f"DS:{ds_val} vs KTC:{ktc_val} "
-                        f"(+{abs(gap)}). {source_str}"
+                        f"DS:{ds_val} vs KTC:{ktc_val} — "
+                        f"z=+{z_rounded}σ (DS {abs(round(sig['residual']))} above expected). "
+                        f"{source_str}"
                     )
-                    entry["sort_score"] = gap
+                    entry["sort_score"] = z
                     buy_signals.append(entry)
 
-                elif gap < 0:
-                    # SELL: KTC values higher than DS
+                elif z < 0:
+                    # SELL: DS values significantly lower than the regression predicts
                     tags = []
                     if is_my_team:
                         tags.append("YOUR TEAM")
                     if age and age >= 28:
                         tags.append("AGING")
-                    if abs(gap) >= 1500:
+                    if abs(z) >= 2.5:
                         tags.append("OVERVALUED")
-                    elif abs(gap) >= 1000:
+                    elif abs(z) >= 2.0:
                         tags.append("SELL HIGH")
                     else:
-                        tags.append("DECLINING")
+                        tags.append("WATCH")
                     entry["tags"] = tags
                     entry["reason"] = (
-                        f"DS:{ds_val} vs KTC:{ktc_val} "
-                        f"({abs(gap)} above DS). {source_str}"
+                        f"DS:{ds_val} vs KTC:{ktc_val} — "
+                        f"z={z_rounded}σ (DS {abs(round(sig['residual']))} below expected). "
+                        f"{source_str}"
                     )
-                    entry["sort_score"] = abs(gap)
+                    entry["sort_score"] = abs(z)
                     sell_signals.append(entry)
 
         buy_signals.sort(key=lambda x: x["sort_score"], reverse=True)

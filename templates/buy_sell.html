@@ -360,7 +360,7 @@
           <span style="color:var(--green)">{{ s.expert_score }}</span>
           <span style="color:var(--muted)">{{ s.ktc_score }}</span>
         </div>
-        <div class="stat-gap" style="color:var(--green)">+{{ s.gap }} pts undervalued</div>
+        <div class="stat-gap" style="color:var(--green)">+{{ s.gap }}σ vs regression</div>
       </div>
     </div>
     {% endfor %}
@@ -397,7 +397,7 @@
           <span style="color:var(--muted)">{{ s.expert_score }}</span>
           <span style="color:var(--red)">{{ s.ktc_score }}</span>
         </div>
-        <div class="stat-gap" style="color:var(--red)">{{ s.gap }} pts overvalued</div>
+        <div class="stat-gap" style="color:var(--red)">{{ s.gap }}σ vs regression</div>
       </div>
     </div>
     {% endfor %}
