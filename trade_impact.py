@@ -179,6 +179,108 @@ def compute_trade_impact(
     }
 
 
+_SLOT_FLOOR = {
+    1: 7000, 2: 5500, 3: 5000, 4: 4800, 5: 4500,
+    6: 4200, 7: 4000, 8: 3500, 9: 3200, 10: 3000,
+    11: 2200, 12: 2000, 13: 1800, 14: 1600, 15: 1400,
+    16: 1200, 17: 1100, 18: 1000, 19: 900, 20: 800,
+}
+
+
+def simulate_draft_state(
+    teams: list,
+    rankings: dict,
+    season_rankings: dict | None,
+    draft_picks: list[dict],
+    trade_log: list[dict] | None = None,
+) -> tuple[list, dict, dict]:
+    """
+    Apply draft picks and in-draft pick trades to a deep-copied snapshot of
+    teams + rankings. Used by both compute_draft_impact (for before/after deltas)
+    and /power-rankings (to show live draft-aware standings).
+
+    Returns (sim_teams, sim_rankings, sim_season_rankings).
+    """
+    if season_rankings is None:
+        season_rankings = rankings
+
+    sim_teams = copy.deepcopy(teams)
+
+    # Apply in-draft pick trades (move pick ownership between teams)
+    if trade_log:
+        for trade in trade_log:
+            gave_pick = trade.get("gave", "")
+            from_id = trade.get("from_team_id")
+            to_id = trade.get("to_team_id")
+            if not from_id or not to_id:
+                continue
+            from_team = next((t for t in sim_teams if t["id"] == from_id), None)
+            to_team = next((t for t in sim_teams if t["id"] == to_id), None)
+            if not from_team or not to_team:
+                continue
+            pick_label = _match_pick(gave_pick)
+            if pick_label and pick_label in from_team.get("picks_holds", []):
+                from_team["picks_holds"].remove(pick_label)
+                to_team.setdefault("picks_holds", []).append(pick_label)
+
+    # Inject rookie values into rankings so they aren't invisible to the engine
+    sim_rankings = dict(rankings)
+    sim_season_rankings = dict(season_rankings)
+    for pick in draft_picks:
+        pname = pick.get("player_name", "")
+        pnum = pick.get("pick", 0)
+        ktc_est = pick.get("ktc_est", 0)
+        nkey = normalize_name(pname)
+        value = ktc_est if ktc_est else (_SLOT_FLOOR.get(pnum, 500) if pnum <= 20 else 300)
+        premium = 1.10 if (pnum and pnum <= 3) else 1.0
+        value = int(value * premium)
+        for rdict in (sim_rankings, sim_season_rankings):
+            existing = rdict.get(nkey)
+            if existing and existing.get("combined"):
+                rdict[nkey] = dict(existing)
+                if premium >= 1.0:
+                    rdict[nkey]["combined"] = max(existing["combined"], value)
+                else:
+                    rdict[nkey]["combined"] = min(existing["combined"], value)
+                if not existing.get("age") or existing["age"] <= 0:
+                    rdict[nkey]["age"] = 21
+            else:
+                rdict[nkey] = {
+                    "name": pname, "combined": value,
+                    "position": pick.get("pos", ""), "age": 21,
+                    "rank": 999, "pos_rank": 999,
+                }
+
+    # Add drafted rookies to team rosters + consume picks
+    for pick in draft_picks:
+        team_id = pick.get("team_id")
+        player_name = pick.get("player_name", "")
+        pos = pick.get("pos", "")
+        if not team_id or not player_name:
+            continue
+        team = next((t for t in sim_teams if t["id"] == team_id), None)
+        if not team:
+            continue
+        team["roster"].append({
+            "name": player_name,
+            "position": pos,
+            "slot": "BE",
+            "slot_id": 20,
+            "player_id": 0,
+        })
+        pick_num = pick.get("pick")
+        if pick_num:
+            rd = (pick_num - 1) // 10 + 1
+            round_labels = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
+            round_str = round_labels.get(rd, f"{rd}th")
+            for pl in list(team.get("picks_holds", [])):
+                if f"2026 {round_str}" in pl:
+                    team["picks_holds"].remove(pl)
+                    break
+
+    return sim_teams, sim_rankings, sim_season_rankings
+
+
 def compute_draft_impact(
     teams: list,
     rankings: dict,
@@ -204,97 +306,9 @@ def compute_draft_impact(
     # Before rankings (current state)
     before_rankings = compute_power_rankings(teams, rankings)
 
-    # Deep copy for simulation
-    sim_teams = copy.deepcopy(teams)
-
-    # Apply in-draft pick trades (move pick ownership)
-    if trade_log:
-        for trade in trade_log:
-            gave_pick = trade.get("gave", "")  # e.g. "1.01"
-            from_id = trade.get("from_team_id")
-            to_id = trade.get("to_team_id")
-            if not from_id or not to_id:
-                continue
-            from_team = next((t for t in sim_teams if t["id"] == from_id), None)
-            to_team = next((t for t in sim_teams if t["id"] == to_id), None)
-            if not from_team or not to_team:
-                continue
-            # Try to move a matching pick from holds
-            pick_label = _match_pick(gave_pick)
-            if pick_label and pick_label in from_team.get("picks_holds", []):
-                from_team["picks_holds"].remove(pick_label)
-                to_team.setdefault("picks_holds", []).append(pick_label)
-
-    # Ensure rookies without existing rankings get a value
-    # so they aren't invisible to the power rankings engine.
-    # Prefer ktc_est from the draft pick data; fall back to slot-based floor.
-    _SLOT_FLOOR = {
-        1: 7000, 2: 5500, 3: 5000, 4: 4800, 5: 4500,
-        6: 4200, 7: 4000, 8: 3500, 9: 3200, 10: 3000,
-        11: 2200, 12: 2000, 13: 1800, 14: 1600, 15: 1400,
-        16: 1200, 17: 1100, 18: 1000, 19: 900, 20: 800,
-    }
-    sim_rankings = dict(rankings)
-    sim_season_rankings = dict(season_rankings)
-    for pick in draft_picks:
-        pname = pick.get("player_name", "")
-        pnum = pick.get("pick", 0)
-        ktc_est = pick.get("ktc_est", 0)
-        nkey = normalize_name(pname)
-        # Use ktc_est if provided, otherwise slot-based floor
-        value = ktc_est if ktc_est else (_SLOT_FLOOR.get(pnum, 500) if pnum <= 20 else 300)
-        # 15% premium for top 3 picks only
-        premium = 1.10 if (pnum and pnum <= 3) else 1.0
-        value = int(value * premium)
-        for rdict in (sim_rankings, sim_season_rankings):
-            existing = rdict.get(nkey)
-            if existing and existing.get("combined"):
-                rdict[nkey] = dict(existing)
-                if premium >= 1.0:
-                    rdict[nkey]["combined"] = max(existing["combined"], value)
-                else:
-                    rdict[nkey]["combined"] = min(existing["combined"], value)
-                if not existing.get("age") or existing["age"] <= 0:
-                    rdict[nkey]["age"] = 21
-            else:
-                rdict[nkey] = {
-                    "name": pname, "combined": value,
-                    "position": pick.get("pos", ""), "age": 21,
-                    "rank": 999, "pos_rank": 999,
-                }
-
-    # Apply draft picks — add rookies to team rosters
-    for pick in draft_picks:
-        team_id = pick.get("team_id")
-        player_name = pick.get("player_name", "")
-        pos = pick.get("pos", "")
-        if not team_id or not player_name:
-            continue
-
-        team = next((t for t in sim_teams if t["id"] == team_id), None)
-        if not team:
-            continue
-
-        # Add to roster — power rankings engine computes optimal lineup
-        # automatically so slot assignment doesn't matter for scoring.
-        team["roster"].append({
-            "name": player_name,
-            "position": pos,
-            "slot": "BE",
-            "slot_id": 20,
-            "player_id": 0,
-        })
-
-        # Remove the used pick from the team's holds (match by round)
-        pick_num = pick.get("pick")
-        if pick_num:
-            rd = (pick_num - 1) // 10 + 1
-            round_labels = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}
-            round_str = round_labels.get(rd, f"{rd}th")
-            for pl in list(team.get("picks_holds", [])):
-                if f"2026 {round_str}" in pl:
-                    team["picks_holds"].remove(pl)
-                    break
+    sim_teams, sim_rankings, sim_season_rankings = simulate_draft_state(
+        teams, rankings, season_rankings, draft_picks, trade_log
+    )
 
     # Compute after rankings in both modes
     def _build_changes(before_list, after_list):

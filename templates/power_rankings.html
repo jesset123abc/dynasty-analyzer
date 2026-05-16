@@ -471,7 +471,13 @@
   <div class="header-icon">📊</div>
   <div style="flex:1">
     <h1>Power Rankings</h1>
-    <p>Dynasty roster strength · All 10 teams ranked</p>
+    <p>Dynasty roster strength · All 10 teams ranked
+      {% if draft_summary and (draft_summary.picks_count > 0 or draft_summary.trades_count > 0) %}
+        <span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:10px;background:rgba(35,134,54,.15);color:#3fb950;font-size:.72rem;font-weight:600;border:1px solid rgba(35,134,54,.4);vertical-align:middle">
+          ● Live draft state applied: {{ draft_summary.picks_count }} pick{% if draft_summary.picks_count != 1 %}s{% endif %}{% if draft_summary.trades_count > 0 %}, {{ draft_summary.trades_count }} trade{% if draft_summary.trades_count != 1 %}s{% endif %}{% endif %}{% if draft_summary.last_pick %} · last: {{ draft_summary.last_pick }}{% endif %}
+        </span>
+      {% endif %}
+    </p>
   </div>
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     {% if teams %}

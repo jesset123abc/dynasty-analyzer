@@ -8,7 +8,7 @@ from espn_data import fetch_league_data, parse_league, build_league_prompt
 from dynasty_data import fetch_all_rankings, build_rankings_summary, build_draftsharks_notes_block, normalize_name, PICK_VALUES
 from rookies_data import ROOKIES_2026
 from power_rankings import compute_power_rankings
-from trade_impact import compute_trade_impact, compute_draft_impact, find_partner_team_id
+from trade_impact import compute_trade_impact, compute_draft_impact, find_partner_team_id, simulate_draft_state
 from nfl_tools import build_nfl_context, build_production_context, build_enhanced_rankings
 import memory_store
 
@@ -232,6 +232,57 @@ def index():
         return render_template("index.html", teams=[], my_team_id=8, error=str(e))
 
 
+def _load_draft_state_for_sim(teams: list) -> tuple[list, list, dict]:
+    """
+    Read draft_state.json (written by the draft board) and convert it into the
+    (draft_picks, trade_log) format that simulate_draft_state expects.
+    Returns (draft_picks, trade_log, summary_dict).
+    """
+    summary = {"picks_count": 0, "trades_count": 0, "last_pick": None}
+    try:
+        state_path = os.path.join(os.path.dirname(__file__), STATE_FILE) \
+            if not os.path.isabs(STATE_FILE) else STATE_FILE
+        with open(state_path) as f:
+            draft_state = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return [], [], summary
+
+    if not draft_state:
+        return [], [], summary
+
+    draft_picks = []
+    for entry in draft_state.get("draftLog", []):
+        owner = entry.get("teamOwner", "")
+        tid = _owner_to_team_id(owner)
+        if not tid:
+            continue
+        draft_picks.append({
+            "pick": entry.get("pick"),
+            "player_name": entry.get("playerName", ""),
+            "pos": entry.get("pos", ""),
+            "ktc_est": entry.get("ktcEst", 0),
+            "team_id": tid,
+        })
+
+    trade_log = []
+    for t in (draft_state.get("tradeLog") or []):
+        to_id = _owner_to_team_id(t.get("to", ""))
+        if to_id:
+            trade_log.append({
+                "gave": t.get("gave", ""),
+                "from_team_id": 8,  # Jesse always the one trading from in this UI
+                "to_team_id": to_id,
+            })
+
+    summary["picks_count"] = len(draft_picks)
+    summary["trades_count"] = len(trade_log)
+    if draft_picks:
+        last = max(draft_picks, key=lambda p: p.get("pick") or 0)
+        summary["last_pick"] = f"#{last.get('pick')} {last.get('player_name')} ({last.get('pos')})"
+
+    return draft_picks, trade_log, summary
+
+
 @app.route("/power-rankings")
 def power_rankings_page():
     try:
@@ -240,17 +291,37 @@ def power_rankings_page():
         rankings = fetch_all_rankings()
         dynasty_rankings = build_enhanced_rankings(rankings, teams, mode="dynasty")
         season_rankings = build_enhanced_rankings(rankings, teams, mode="season")
-        pr_dynasty = compute_power_rankings(teams, dynasty_rankings, mode="dynasty", season_rankings=season_rankings, apply_draft_state=True)
-        pr_season = compute_power_rankings(teams, season_rankings, mode="season", apply_draft_state=True)
+
+        # Pull live draft state — if picks/trades exist, simulate them onto teams
+        draft_picks, trade_log, draft_summary = _load_draft_state_for_sim(teams)
+        if draft_picks or trade_log:
+            sim_teams, sim_dynasty, sim_season = simulate_draft_state(
+                teams, dynasty_rankings, season_rankings, draft_picks, trade_log or None,
+            )
+            # Use simulated state. apply_draft_state=False because we already
+            # consumed picks in simulate_draft_state (avoid double-subtraction).
+            teams_for_pr = sim_teams
+            dynasty_for_pr = sim_dynasty
+            season_for_pr = sim_season
+            apply_state = False
+        else:
+            teams_for_pr = teams
+            dynasty_for_pr = dynasty_rankings
+            season_for_pr = season_rankings
+            apply_state = True
+
+        pr_dynasty = compute_power_rankings(teams_for_pr, dynasty_for_pr, mode="dynasty", season_rankings=season_for_pr, apply_draft_state=apply_state)
+        pr_season = compute_power_rankings(teams_for_pr, season_for_pr, mode="season", apply_draft_state=apply_state)
         # Compute max positional values for bar scaling (use dynasty for both)
         max_pos = {}
         all_teams = pr_dynasty + pr_season
         for pos in ["QB", "RB", "WR", "TE"]:
             max_pos[pos] = max((t["pos_scores"][pos]["value"] for t in all_teams), default=1) or 1
 
-        # Attach roster details, positional league ranks, and picks to each entry
-        teams_by_id = {t["id"]: t for t in teams}
-        for pr_list, rnk in [(pr_dynasty, dynasty_rankings), (pr_season, season_rankings)]:
+        # Attach roster details, positional league ranks, and picks to each entry.
+        # Use the simulated state so rosters/picks reflect the live draft board.
+        teams_by_id = {t["id"]: t for t in teams_for_pr}
+        for pr_list, rnk in [(pr_dynasty, dynasty_for_pr), (pr_season, season_for_pr)]:
             # Compute positional league ranks
             for pos in ["QB", "RB", "WR", "TE"]:
                 sorted_by_pos = sorted(pr_list, key=lambda t: t["pos_scores"][pos]["value"], reverse=True)
@@ -305,6 +376,7 @@ def power_rankings_page():
             max_pos_values=max_pos,
             my_team_id=my_team_id,
             teams=teams,
+            draft_summary=draft_summary,
             error=None,
         )
     except Exception as e:
@@ -315,6 +387,7 @@ def power_rankings_page():
             max_pos_values={"QB": 1, "RB": 1, "WR": 1, "TE": 1},
             my_team_id=8,
             teams=[],
+            draft_summary={"picks_count": 0, "trades_count": 0, "last_pick": None},
             error=str(e),
         )
 
