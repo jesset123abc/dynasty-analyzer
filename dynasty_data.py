@@ -57,7 +57,12 @@ CACHE_TTL = 900  # seconds
 
 # ── Source weights (DraftSharks is primary; KTC is the market floor) ────────
 
-SOURCE_WEIGHTS = {"ds": 0.60, "ktc": 0.40}
+# Backtest vs 2025 fpts/gm (n=187, same-sample Spearman): DS .802, FC .779, KTC .736.
+# Pure inverse-variance says ds .40 / fc .34 / ktc .26; DS is anchored higher because
+# (a) it's the best predictor and (b) Jesse trusts DS most — market sources split the
+# remainder in proportion to their backtest strength. (Backtest is post-2025, so
+# treat as directional; re-run backtest_weights.py after the 2026 season.)
+SOURCE_WEIGHTS = {"ds": 0.50, "fc": 0.28, "ktc": 0.22}
 
 # Position-specific volatility priors (in value-point units) — these are the
 # minimum amount of intrinsic uncertainty a player at this position carries,
@@ -448,6 +453,7 @@ def fetch_all_rankings() -> dict:
 
     ktc_players, _picks = _fetch_ktc()
     ds_players = _fetch_draftsharks()
+    fc_players = _fetch_fantasycalc()  # market source #2 (re-added after 3-way backtest)
 
     # Find max DS 3D Value for normalization to 0-9999 (top should be ~100.0)
     ds_max_3d = max(
@@ -455,26 +461,31 @@ def fetch_all_rankings() -> dict:
         default=0.0,
     ) or 1.0
 
-    all_keys = set(ktc_players) | set(ds_players)
+    all_keys = set(ktc_players) | set(ds_players) | set(fc_players)
 
     result: dict = {}
     for key in all_keys:
         k = ktc_players.get(key, {})
         d = ds_players.get(key, {})
+        f = fc_players.get(key, {})
 
         ktc_v = k.get("ktc", 0)
+        fc_v = f.get("fc", 0) if f else 0
         ds_rank = d.get("ds_rank", 0) if d else 0
         ds_3d = d.get("ds_3d_value", 0.0) if d else 0.0
         # DS native value: 3D Value score normalized to 0-9999 scale
         ds_v = round((ds_3d / ds_max_3d) * 9999) if ds_3d > 0 else 0
 
-        # market_combined = KTC only (pure market reference for BUY/SELL gap)
-        market_combined = ktc_v
+        # market_combined = pure-market reference (KTC + FC average; excludes DS so
+        # the BUY/SELL gap doesn't compare DS against itself)
+        market_vals = [v for v in (ktc_v, fc_v) if v > 0]
+        market_combined = round(sum(market_vals) / len(market_vals)) if market_vals else 0
 
-        # Weighted combined: DS 60% + KTC 40%. Re-normalize if only one source.
+        # Weighted combined: DS 50% + FC 28% + KTC 22%. Re-normalize if sources missing.
         weighted_pairs = []
         if ktc_v > 0: weighted_pairs.append((ktc_v, SOURCE_WEIGHTS["ktc"]))
         if ds_v > 0:  weighted_pairs.append((ds_v,  SOURCE_WEIGHTS["ds"]))
+        if fc_v > 0:  weighted_pairs.append((fc_v,  SOURCE_WEIGHTS["fc"]))
         if weighted_pairs:
             wsum = sum(w for _, w in weighted_pairs)
             combined = round(sum(v * w for v, w in weighted_pairs) / wsum)
@@ -484,6 +495,7 @@ def fetch_all_rankings() -> dict:
         sources = []
         if ktc_v > 0: sources.append("ktc")
         if ds_v > 0:  sources.append("ds")
+        if fc_v > 0:  sources.append("fc")
 
         result[key] = {
             "name":            k.get("name") or (d.get("ds_name") if d else None) or key.title(),
@@ -500,6 +512,9 @@ def fetch_all_rankings() -> dict:
             "ds_analysis":     d.get("ds_analysis", "") if d else "",
             "sources":         sources,
             "ktc_rank":        k.get("ktc_rank", 999),
+            "fc":              fc_v,
+            "fc_rank":         f.get("fc_rank", 999) if f else 999,
+            "fc_trend_30d":    f.get("fc_trend_30d", 0) if f else 0,
             "age":             k.get("age") or 0,
             "position":        k.get("position", "") or (d.get("ds_pos", "") if d else ""),
         }
