@@ -262,8 +262,11 @@ If there are NO flagged players and NO portfolio risks worth acting on today, re
         text = "".join(b.text for b in msg.content[last_tool + 1:] if getattr(b, "type", "") == "text").strip()
         if not text:  # no-tools run: single text block
             text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
-        if text.lower().startswith("subject:"):  # we set our own subject header
-            text = text.split("\n", 1)[1].strip() if "\n" in text else text
+        # Drop any pre-email narration: if a "Subject:" line exists, the email
+        # starts right after it (we set our own subject header anyway).
+        m = re.search(r"^Subject:.*$", text, flags=re.MULTILINE | re.IGNORECASE)
+        if m:
+            text = text[m.end():].strip()
         return text
 
     last = None
