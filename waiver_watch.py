@@ -164,8 +164,30 @@ def gather_candidates() -> tuple[list[dict], dict]:
                 "score": round(score, 1),
             })
 
+    # Jesse's stash portfolio (team 8): his depth-2/3 players and the starters
+    # blocking them — the places where injury/legal/dispute news opens his flip windows.
+    portfolio = []
+    jesse = next((t for t in teams if t["id"] == 8), None)
+    if jesse:
+        by_norm = {normalize_name((sp.get("full_name") or "")): sp for sp in players.values() if isinstance(sp, dict)}
+        for rp in jesse["roster"]:
+            sp = by_norm.get(normalize_name(rp["name"]))
+            if not sp or sp.get("position") not in ("QB", "RB", "WR", "TE"):
+                continue
+            depth = sp.get("depth_chart_order") or 9
+            if depth < 2 or depth > 3 or not sp.get("team"):
+                continue
+            blocker = starters.get((sp["team"], sp.get("position")))
+            portfolio.append({
+                "stash": sp.get("full_name"), "pos": sp.get("position"), "team": sp.get("team"),
+                "depth": depth,
+                "blocker": blocker.get("full_name") if blocker else None,
+                "blocker_age": blocker.get("age") if blocker else None,
+                "blocker_injury": (blocker.get("injury_status") or "healthy") if blocker else None,
+            })
+
     candidates.sort(key=lambda c: -c["score"])
-    return candidates, {"owned_count": len(owned)}
+    return candidates, {"owned_count": len(owned), "portfolio": portfolio}
 
 
 def pick_new_flags(candidates: list[dict], force: bool = False) -> list[dict]:
@@ -189,11 +211,12 @@ def pick_new_flags(candidates: list[dict], force: bool = False) -> list[dict]:
     return flags
 
 
-def write_email(flags: list[dict], context: list[dict]) -> str:
+def write_email(flags: list[dict], context: list[dict], portfolio: list[dict] | None = None) -> str:
     import anthropic
     client = anthropic.Anthropic()
     watchlist = "\n".join(json.dumps(c) for c in context[:15])
-    flagged = "\n".join(json.dumps(c) for c in flags)
+    flagged = "\n".join(json.dumps(c) for c in flags) or "(none today)"
+    portfolio_s = "\n".join(json.dumps(p) for p in (portfolio or [])) or "(none)"
     prompt = f"""You are Jesse's dynasty fantasy football waiver-wire scout. His league: 10-team Superflex, 0.5 PPR.
 His strategy this year: tanking 2026 for early 2027 picks, so he wants CHEAP STASH-AND-FLIP assets — unrostered
 players who could win an NFL starting job (especially RB and QB) or genuinely break out, hold them while they
@@ -211,17 +234,34 @@ projections, 24h add-trend heat, age):
 Wider watchlist for context (not flagged today):
 {watchlist}
 
-If you can search the web, verify the top 2-3 with current news (camp reports, contract status, depth-chart
-moves) before writing. Write a SHORT email (plain text, no markdown syntax). For each flagged player: 2-3 sharp
-sentences — why the starting-job path or breakout is real, the contract/injury angle if there is one, what the
-flip window looks like, and a clear verdict (ADD NOW / SPECULATIVE STASH / MONITOR). Rank them. If someone is a
+RISK LENS (mandatory): for every flagged player AND the starter blocking them, actively consider current
+injuries, legal trouble, suspension/exempt-list risk, holdouts, contract disputes, trade rumors, and coaching
+changes. If you can search the web, verify the top 2-3 flags AND scan for risk news on the portfolio blockers
+below before writing. Mechanical data cannot see legal/dispute risk — that is YOUR job.
+
+Jesse's stash portfolio (his own bench players and the starters blocking them — news about a BLOCKER opens
+Jesse's flip window, so surface it prominently as a "PORTFOLIO ALERT"):
+{portfolio_s}
+
+Write a SHORT email (plain text, no markdown syntax). Structure: any PORTFOLIO ALERTS first (blocker risk news —
+injury, legal, suspension, dispute — and what Jesse should do about it), then flagged free agents. For each
+flagged player: 2-3 sharp sentences — why the starting-job path or breakout is real, the risk/contract/injury
+angle, the flip window, and a clear verdict (ADD NOW / SPECULATIVE STASH / MONITOR). Rank them. If someone is a
 Fannin-type "don't drop this one early" hold, say so. End with one line on anyone from the watchlist worth
-watching this week. No fluff, no preamble."""
+watching this week. No fluff, no preamble.
+
+If there are NO flagged players and NO portfolio risks worth acting on today, reply with exactly: NO_EMAIL"""
     def _extract(msg):
-        # Web-search runs interleave narration text blocks between tool calls —
-        # the finished email is the LAST text block only.
-        texts = [b.text for b in msg.content if getattr(b, "type", "") == "text"]
-        text = (texts[-1] if texts else "").strip()
+        # Web-search runs interleave narration/tool blocks; the finished email is
+        # every text block AFTER the last tool-result (citations split it into
+        # multiple text blocks, so join them — taking only the last one truncates).
+        last_tool = -1
+        for i, b in enumerate(msg.content):
+            if getattr(b, "type", "") not in ("text",):
+                last_tool = i
+        text = "".join(b.text for b in msg.content[last_tool + 1:] if getattr(b, "type", "") == "text").strip()
+        if not text:  # no-tools run: single text block
+            text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
         if text.lower().startswith("subject:"):  # we set our own subject header
             text = text.split("\n", 1)[1].strip() if "\n" in text else text
         return text
@@ -250,8 +290,9 @@ def send_email(body: str, flags: list[dict]) -> None:
     user, pw = os.environ["GMAIL_USER"], os.environ["GMAIL_APP_PASS"]
     to = os.environ.get("WAIVER_EMAIL_TO", user)
     names = ", ".join(f"{f['name']} ({f['pos']})" for f in flags[:3])
+    subject = f"Waiver Radar — {names}" if flags else "Waiver Radar — portfolio alert"
     msg = MIMEText(body, "plain", "utf-8")
-    msg["Subject"] = f"Waiver Radar — {names}"
+    msg["Subject"] = subject
     msg["From"] = user
     msg["To"] = to
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
@@ -265,16 +306,18 @@ def main() -> None:
     candidates, meta = gather_candidates()
     flags = pick_new_flags(candidates, force=force)
     print(f"[waiver_watch] {datetime.now():%Y-%m-%d %H:%M} scanned (owned={meta['owned_count']}), "
-          f"candidates={len(candidates)}, new flags={len(flags)}")
-    if not flags:
-        print("[waiver_watch] no real opportunities today — no email.")
+          f"candidates={len(candidates)}, new flags={len(flags)}, portfolio={len(meta['portfolio'])}")
+    # Always consult the scout: even with zero flags, blocker risk news (injury/legal/
+    # suspension/dispute) on Jesse's stash portfolio warrants an email.
+    body = write_email(flags, candidates, meta["portfolio"])
+    if body.strip() == "NO_EMAIL":
+        print("[waiver_watch] no opportunities or portfolio risks today — no email.")
         return
-    body = write_email(flags, candidates)
     if dry:
         print("\n--- EMAIL (dry run) ---\n" + body)
         return
     send_email(body, flags)
-    print(f"[waiver_watch] emailed {len(flags)} flags: " + ", ".join(f["name"] for f in flags))
+    print(f"[waiver_watch] emailed — flags: " + (", ".join(f["name"] for f in flags) or "none (portfolio alert)"))
 
 
 if __name__ == "__main__":
