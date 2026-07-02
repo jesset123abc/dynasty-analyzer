@@ -15,3 +15,5 @@ build/
 sleeper_cache.json
 sleeper_proj_cache.json
 sleeper_stats_cache.json
+waiver_seen.json
+waiver_watch.log
