@@ -251,7 +251,25 @@ def simulate_draft_state(
                     "rank": 999, "pos_rank": 999,
                 }
 
-    # Add drafted rookies to team rosters + consume picks
+    # Add drafted rookies to team rosters + consume picks.
+    #
+    # Mid-draft, ESPN rosters don't have the rookies yet → append them (original
+    # behavior). Post-draft, ESPN rosters already contain them (and reflect later
+    # trades AND cuts), so ESPN is the source of truth: appending would double-count
+    # rostered rookies and resurrect waived ones, skewing the rankings. Heuristic:
+    # if at least half the drafted rookies are already rostered somewhere, the
+    # draft has been processed by ESPN → never append.
+    rostered_names = {
+        normalize_name(p.get("name", ""))
+        for t in sim_teams
+        for p in t.get("roster", [])
+    }
+    matched = sum(
+        1 for pick in draft_picks
+        if normalize_name(pick.get("player_name", "")) in rostered_names
+    )
+    espn_has_draft = draft_picks and matched >= len(draft_picks) / 2
+
     for pick in draft_picks:
         team_id = pick.get("team_id")
         player_name = pick.get("player_name", "")
@@ -261,13 +279,16 @@ def simulate_draft_state(
         team = next((t for t in sim_teams if t["id"] == team_id), None)
         if not team:
             continue
-        team["roster"].append({
-            "name": player_name,
-            "position": pos,
-            "slot": "BE",
-            "slot_id": 20,
-            "player_id": 0,
-        })
+        nkey = normalize_name(player_name)
+        if not espn_has_draft and nkey not in rostered_names:
+            rostered_names.add(nkey)
+            team["roster"].append({
+                "name": player_name,
+                "position": pos,
+                "slot": "BE",
+                "slot_id": 20,
+                "player_id": 0,
+            })
         pick_num = pick.get("pick")
         if pick_num:
             rd = (pick_num - 1) // 10 + 1
