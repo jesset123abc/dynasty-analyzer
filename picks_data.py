@@ -25,6 +25,7 @@ TEAM_PICKS = {
             "Patrick's 2027 2nd",
             "Patrick's 2027 3rd",
             "Patrick's 2027 4th",
+            "Jesse's 2027 2nd",    # acquired from Jesse (Omar Cooper Jr. pick trade)
         ],
         "traded_away": [
             "Patrick's 2026 1st -> Jesse (GzTz)",
@@ -39,13 +40,13 @@ TEAM_PICKS = {
             "Alex's 2026 4th",     # acquired from Alex Wall
             "Brad's 2027 3rd",     # acquired from Brad Komar
             "Alexa's 2027 1st",
-            "Alexa's 2027 2nd",
             "Alexa's 2027 3rd",
             "Alexa's 2027 4th",
         ],
         "traded_away": [
             "Alexa's 2026 1st -> Alex Wall",
             "Alexa's 2026 3rd -> Brad Komar",
+            "Alexa's 2027 2nd -> Jesse (GzTz) (Carnell Tate / Tyler Shough trade)",
         ],
     },
     3: {  # Alex Wall
@@ -129,7 +130,7 @@ TEAM_PICKS = {
             "Alex's 2026 1st",     # acquired from Alex Wall (JT=Jesse in sheet)
             "Driscoll's 2027 1st", # acquired from Sarah Driscoll (JT=Jesse in sheet)
             "Jesse's 2027 1st",
-            "Jesse's 2027 2nd",
+            "Alexa's 2027 2nd",    # acquired from Alexa in Carnell Tate trade (w/ Tyler Shough)
             "Jesse's 2027 3rd",
             "Jesse's 2027 4th",
         ],
@@ -137,6 +138,7 @@ TEAM_PICKS = {
             "Jesse's 2026 2nd -> Patrick Stevenson",
             "Jesse's 2026 3rd -> Alex Wall",
             "Jesse's 2026 4th -> Alex Wall",
+            "Jesse's 2027 2nd -> Patrick Stevenson (for the pick used on Omar Cooper Jr.)",
         ],
     },
     9: {  # Sarah Driscoll
