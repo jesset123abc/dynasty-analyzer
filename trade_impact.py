@@ -187,6 +187,26 @@ _SLOT_FLOOR = {
 }
 
 
+def espn_reflects_draft(teams: list, draft_picks: list[dict], _rostered: set | None = None) -> bool:
+    """
+    True once ESPN rosters already contain the drafted rookies (at least half of
+    the draft log matched by normalized name). When True, ESPN is the source of
+    truth — draft-log rookies must NOT be re-added to rosters or double-counted.
+    """
+    if not draft_picks:
+        return False
+    rostered = _rostered if _rostered is not None else {
+        normalize_name(p.get("name", ""))
+        for t in teams
+        for p in t.get("roster", [])
+    }
+    matched = sum(
+        1 for pick in draft_picks
+        if normalize_name(pick.get("player_name", "")) in rostered
+    )
+    return matched >= len(draft_picks) / 2
+
+
 def simulate_draft_state(
     teams: list,
     rankings: dict,
@@ -264,11 +284,7 @@ def simulate_draft_state(
         for t in sim_teams
         for p in t.get("roster", [])
     }
-    matched = sum(
-        1 for pick in draft_picks
-        if normalize_name(pick.get("player_name", "")) in rostered_names
-    )
-    espn_has_draft = draft_picks and matched >= len(draft_picks) / 2
+    espn_has_draft = espn_reflects_draft(sim_teams, draft_picks, _rostered=rostered_names)
 
     for pick in draft_picks:
         team_id = pick.get("team_id")

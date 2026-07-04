@@ -8,7 +8,7 @@ from espn_data import fetch_league_data, parse_league, build_league_prompt
 from dynasty_data import fetch_all_rankings, build_rankings_summary, build_draftsharks_notes_block, normalize_name, PICK_VALUES
 from rookies_data import ROOKIES_2026
 from power_rankings import compute_power_rankings
-from trade_impact import compute_trade_impact, compute_draft_impact, find_partner_team_id, simulate_draft_state
+from trade_impact import compute_trade_impact, compute_draft_impact, find_partner_team_id, simulate_draft_state, espn_reflects_draft
 from season_sim import simulate_season
 from backtest_weights import run_backtest
 from nfl_tools import build_nfl_context, build_production_context, build_enhanced_rankings
@@ -1371,7 +1371,17 @@ def chat():
     try:
         draft_state = _load_persisted_draft_state()
         if draft_state and draft_state.get("draftLog"):
-            draft_lines = ["DRAFT BOARD:"]
+            _dp_probe = [
+                {"player_name": e.get("playerName", ""), "pick": e.get("pick")}
+                for e in draft_state["draftLog"]
+            ]
+            draft_done = espn_reflects_draft(teams, _dp_probe)
+            draft_lines = [
+                "DRAFT RECAP (2026 rookie draft COMPLETE — every rookie listed below is "
+                "ALREADY on the ESPN rosters shown above; do NOT treat them as additions "
+                "or count them twice):"
+                if draft_done else "DRAFT BOARD:"
+            ]
             for entry in sorted(draft_state["draftLog"], key=lambda e: e.get("pick", 0)):
                 pick_num = entry.get("pick", 0)
                 rd = (pick_num - 1) // 10 + 1
@@ -1388,8 +1398,12 @@ def chat():
                 for t in draft_state["tradeLog"]:
                     draft_lines.append(f"    Jesse traded {t.get('gave','')} to {t.get('to','')} for {t.get('received','')}")
 
-            # Compute post-draft power rankings impact server-side
+            # Compute post-draft power rankings impact server-side.
+            # Skipped once ESPN already reflects the draft — the "rookies added"
+            # framing would double-count players who are on the rosters above.
             try:
+                if draft_done:
+                    raise StopIteration  # skip impact block cleanly
                 draft_picks = []
                 for entry in draft_state["draftLog"]:
                     owner = entry.get("teamOwner", "")
@@ -1861,6 +1875,10 @@ def draft_preview_api():
 
     # Apply existing draft picks to get "before" state
     base_teams = _copy.deepcopy(teams)
+    # Already-rostered names (post-draft, ESPN includes the rookies — don't re-add)
+    _rostered_names = {
+        normalize_name(p.get("name", "")) for t in base_teams for p in t.get("roster", [])
+    }
     # Use copies of rankings so we can add rookie entries without polluting originals
     enhanced_dynasty = dict(enhanced_dynasty)
     enhanced_season = dict(enhanced_season)
@@ -1872,12 +1890,14 @@ def draft_preview_api():
         team = next((t for t in base_teams if t["id"] == tid), None)
         if team:
             pname = entry.get("playerName", "")
-            team["roster"].append({
-                "name": pname,
-                "position": entry.get("pos", ""),
-                "slot": "BE", "slot_id": 20, "player_id": 0,
-                "fpts_2026_proj": 100,  # assume rookies have projections
-            })
+            if normalize_name(pname) not in _rostered_names:
+                _rostered_names.add(normalize_name(pname))
+                team["roster"].append({
+                    "name": pname,
+                    "position": entry.get("pos", ""),
+                    "slot": "BE", "slot_id": 20, "player_id": 0,
+                    "fpts_2026_proj": 100,  # assume rookies have projections
+                })
             # Remove the used pick from the team's holds
             epick = entry.get("pick", 0)
             if epick:
@@ -1946,15 +1966,16 @@ def draft_preview_api():
         sim_rankings_dyn = dict(enhanced_dynasty)
         sim_rankings_sea = dict(enhanced_season)
 
-        # Add player to team
+        # Add player to team (skip if somehow already rostered — no double-count)
         my_sim = next((t for t in sim_teams if t["id"] == team_id), None)
         if not my_sim:
             continue
-        my_sim["roster"].append({
-            "name": pname, "position": ppos,
-            "slot": "BE", "slot_id": 20, "player_id": 0,
-            "fpts_2026_proj": 100,
-        })
+        if not any(normalize_name(rp.get("name", "")) == normalize_name(pname) for rp in my_sim["roster"]):
+            my_sim["roster"].append({
+                "name": pname, "position": ppos,
+                "slot": "BE", "slot_id": 20, "player_id": 0,
+                "fpts_2026_proj": 100,
+            })
 
         # Ensure ranking entry — tiered draft premium/penalty + fix missing age
         premium = _rookie_draft_premium(pick_number)
