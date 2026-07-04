@@ -18,9 +18,6 @@ ESPN team IDs (confirmed from API):
 TEAM_PICKS = {
     1: {  # Patrick Stevenson (LaGarrette Blount AllStars)
         "holds": [
-            "Patrick's 2026 3rd",
-            "Jesse's 2026 2nd",    # acquired from Jesse
-            "Alex's 2026 3rd",     # acquired from Alex Wall
             "Patrick's 2027 1st",
             "Patrick's 2027 2nd",
             "Patrick's 2027 3rd",
@@ -35,9 +32,6 @@ TEAM_PICKS = {
     },
     2: {  # Alexa Feldman
         "holds": [
-            "Alexa's 2026 2nd",
-            "Alexa's 2026 4th",
-            "Alex's 2026 4th",     # acquired from Alex Wall
             "Brad's 2027 3rd",     # acquired from Brad Komar
             "Alexa's 2027 1st",
             "Alexa's 2027 3rd",
@@ -51,11 +45,6 @@ TEAM_PICKS = {
     },
     3: {  # Alex Wall
         "holds": [
-            "Jesse's 2026 3rd",    # acquired from Jesse
-            "Jesse's 2026 4th",    # acquired from Jesse
-            "Alexa's 2026 1st",    # acquired from Alexa
-            "Patrick's 2026 2nd",  # acquired from Patrick
-            "Patrick's 2026 4th",  # acquired from Patrick
             "Alex's 2027 1st",
             "Alex's 2027 2nd",
             "Alex's 2027 3rd",
@@ -70,11 +59,6 @@ TEAM_PICKS = {
     },
     4: {  # Bradley Komar
         "holds": [
-            "Brad's 2026 1st",
-            "Brad's 2026 2nd",
-            "Brad's 2026 3rd",
-            "Brad's 2026 4th",
-            "Alexa's 2026 3rd",    # acquired from Alexa
             "Brad's 2027 1st",
             "Brad's 2027 2nd",
             "Brad's 2027 4th",
@@ -85,10 +69,6 @@ TEAM_PICKS = {
     },
     5: {  # Nathaniel Lubin
         "holds": [
-            "Lubin's 2026 1st",
-            "Lubin's 2026 2nd",
-            "Lubin's 2026 3rd",
-            "Lubin's 2026 4th",
             "Lubin's 2027 1st",
             "Lubin's 2027 2nd",
             "Lubin's 2027 3rd",
@@ -98,9 +78,6 @@ TEAM_PICKS = {
     },
     6: {  # John Schueler
         "holds": [
-            "Schueler's 2026 1st",
-            "Schueler's 2026 3rd",
-            "Schueler's 2026 4th",
             "Schueler's 2027 1st",
             "Schueler's 2027 2nd",
             "Schueler's 2027 3rd",
@@ -112,10 +89,6 @@ TEAM_PICKS = {
     },
     7: {  # Grant Denton
         "holds": [
-            "Denton's 2026 1st",
-            "Denton's 2026 2nd",
-            "Denton's 2026 3rd",
-            "Denton's 2026 4th",
             "Denton's 2027 1st",
             "Denton's 2027 2nd",
             "Denton's 2027 3rd",
@@ -125,9 +98,6 @@ TEAM_PICKS = {
     },
     8: {  # Jesse / Gz Tz
         "holds": [
-            "Jesse's 2026 1st",
-            "Patrick's 2026 1st",  # acquired from Patrick (JT=Jesse in sheet)
-            "Alex's 2026 1st",     # acquired from Alex Wall (JT=Jesse in sheet)
             "Driscoll's 2027 1st", # acquired from Sarah Driscoll (JT=Jesse in sheet)
             "Jesse's 2027 1st",
             "Alexa's 2027 2nd",    # acquired from Alexa in Carnell Tate trade (w/ Tyler Shough)
@@ -143,10 +113,6 @@ TEAM_PICKS = {
     },
     9: {  # Sarah Driscoll
         "holds": [
-            "Driscoll's 2026 1st",
-            "Driscoll's 2026 3rd",
-            "Driscoll's 2026 4th",
-            "Alex's 2026 2nd",     # acquired from Alex Wall
             "Driscoll's 2027 2nd",
             "Driscoll's 2027 3rd",
             "Driscoll's 2027 4th",
@@ -158,12 +124,6 @@ TEAM_PICKS = {
     },
     10: {  # Jacob Berkowitz
         "holds": [
-            "Berkowitz's 2026 1st",
-            "Berkowitz's 2026 2nd",
-            "Berkowitz's 2026 3rd",
-            "Berkowitz's 2026 4th",
-            "Driscoll's 2026 2nd",  # acquired from Sarah Driscoll
-            "Schueler's 2026 2nd",  # acquired from John Schueler
             "Berkowitz's 2027 1st",
             "Berkowitz's 2027 2nd",
             "Berkowitz's 2027 3rd",
